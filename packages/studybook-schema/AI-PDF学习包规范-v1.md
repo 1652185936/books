@@ -56,6 +56,7 @@ schemas/
 {
   "format": "ai.studybook",
   "formatVersion": "1.0.0",
+  "contentVersion": "1.0.0",
   "packageId": "essential-grammar-in-use-zh-3e",
   "createdAt": "2026-06-19T12:00:00Z",
   "generator": {
@@ -77,6 +78,8 @@ schemas/
   "checksums": "checksums.json"
 }
 ```
+
+`contentVersion` 是内容版本（语义化版本），与 `formatVersion` 相互独立：`formatVersion` 决定协议主版本兼容性（IMP-006 白名单），`contentVersion` 是去重与升级判定键。应用按 `packageId + contentVersion` 识别“重复导入”与“新版本覆盖”，并映射到 `books.content_version`（见《06-协议到数据库映射规范》§1）。
 
 ## 4. book.json
 
