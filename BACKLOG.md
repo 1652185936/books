@@ -1,0 +1,44 @@
+# 墨学书架 — 实现 Backlog（Ralph 自主迭代）
+
+最终目标：按 `docs/specifications/` 规格完整实现第一版 HarmonyOS 平板应用（ArkTS + ArkUI）。
+顺序遵循 CLAUDE.md §4 开发流程：先数据层与可测业务逻辑，再 ArkUI 页面，再测试。
+每条尽量是「一轮可完成 + 可验证」的粒度。依赖靠顺序表达（靠前的先做）。
+
+## 阶段 0 — 工程与基础设施
+- [ ] P0-1 HarmonyOS 工程脚手架：`app/` 下建 DevEco/hvigor 工程（module.json5、app.json5、ArkTS 严格类型配置、目录骨架 ets/{pages,viewmodel,service,repository,db,model,resource,utils}），可被 hvigor 识别。
+- [ ] P0-2 通用类型与 DTO：按《04 契约》§1 定义 `Id/EpochMs/JsonObject/PageRequest/PageResult/AppError`，并为各域 DTO 建 ArkTS model 文件（导入/书籍内容/进度/手写识别/练习判分/复习/批注/错题统计/设置/备份），与 04 字面一致。
+- [ ] P0-3 数据库迁移 V001：按 LLD §3 全部表与索引（books…content_review_flags、§3.25）写 `V001__initial.sql`，含所有 NOT NULL/CHECK/UNIQUE/FK；relationalStore 封装 + 迁移执行器（迁移表、单调递增、只执行一次）。
+- [ ] P0-4 Repository 基类与事务封装：统一 Repository 接口约定（页面不碰 SQL）、事务/可回滚封装、`AppError` 领域错误。
+- [ ] P0-5 i18n 资源骨架：`resources/{base,zh_CN,en_US}/element/string.json`；按 LLD §3.14A 落 error_code→资源键映射的全部键中英文文案（§3.14B 文案表）。
+- [ ] P0-6 路由骨架：按 LLD §6 各页面路由（含 §6.13 `from`/`bookId`/`range` 约定）建 Navigation 路由表与占位页。
+
+## 阶段 1 — 导入内核（F02/F03 的核心，多功能依赖）
+- [ ] P1-1 ZIP 安全校验：路径穿越/条目数/大小/压缩比/扩展名（LLD §2.1、IMP-001~004），不解压先检查。
+- [ ] P1-2 内置 JSON Schema 校验器：用 `packages/studybook-schema/` 的 manifest/book/chapter/report/checksums 校验暂存文件；忽略包内 schemas/（LLD §2.4 step8）。
+- [ ] P1-3 导入状态机与暂存区：LLD §2.3/§2.4 状态机、隔离暂存、SHA-256 比对（§2.4 step7）、IMP-* 错误码与 §3.14A 文案。
+- [ ] P1-4 导入事务与索引落库：协议→DB 映射（《06》全文）、章节/小节/内容块/练习/空位/答案/复习卡/复核标记落库、chapter_count 事务内重算；原子提升 + 提交（§2.4 step11-13）。
+- [ ] P1-5 取消/重试/后台/重启恢复 + 升级子流程：LLD §2.6/§2.7（cancel 边界、可重试分类、awaiting_confirmation 24h、升级 snapshot/promote/restore）。
+
+## 阶段 2 — 各功能垂直切片（Repository → Service → ViewModel → 页面 → 自验）
+- [ ] F01 书架页：BooksRepository.list + 书架页 + 重启恢复 continueTarget（FR-F01，LLD §6.1）。
+- [ ] F02 导入选择页：ImportService.create + 选择/空间检查页（FR-F02，LLD §6.2）。
+- [ ] F03 校验结果页：runValidation 进度流 + 可读失败原因 + 回滚（FR-F03，LLD §6.3）。
+- [ ] F04 目录页：listChapters + searchChapters(章节级) + 完成度展示（FR-F04，LLD §6.4）。
+- [ ] F05 章节讲解页：getChapter + 11 种 block 渲染组件（含 BulletList/AudioTextBlock，§6.5 映射表）+ 默认小节/空 sections（R-034）。
+- [ ] F06 手写练习页：笔迹采集/即时墨迹/防误触、blank 多空、draft 快照（§4.1/§6.6），单位换算 emToVp（§1.3）。
+- [ ] F07 识别与判分页：HandwritingRecognizer 封装 + RecognitionHandle/取消 + GradingEngine 纯函数 + GradingService 编排 + 逐空 perBlank（§4.2/§4.4/§4.5）；识别失败/降级（R-065）。
+- [ ] F08 批注页：AnnotationRepository/Service（笔记/高亮/收藏 + 自动保存 + 退出落盘 + 重定位），handwriting_records 三态（§3.15/§6.8）。
+- [ ] F09 复习页：ReviewScheduler（间隔算法 §5 + applyRating + getTodaySummary + 会话去重）+ 复习页（FR-F09，LLD §6.9）。
+- [ ] F10 错题本页：WrongBookRepository(query/getDetail/listForBatch/markMastered 不覆盖历史) + 筛选/重做/批量页（FR-F10，§6.10）。
+- [ ] F11 学习统计页：StatisticsService(recordEvent/getMetrics/recompute) + 统计口径(§3.13.1/§3.13A) + 图表+文本摘要（FR-F11，§6.11）。
+- [ ] F12 设置与数据页：SettingsService 键级校验 + 导出/恢复(BackupService 兼容判定) + 清缓存白名单 + 两阶段删除(§8.1)（FR-F12，§6.12）。
+
+## 阶段 3 — 非功能、安全与收尾
+- [ ] P3-1 regex 判分 ReDoS 防护：导入期静态校验 + 运行期输入上限/50ms 硬超时降级（LLD §3.11、HLD §11）。
+- [ ] P3-2 缓存策略与文件版本：LRU/容量(§9A)、笔迹文件 version 兼容、备份 formatVersion 兼容判定。
+- [ ] P3-3 NFR 落实核对：性能/可靠性/安全/无障碍/兼容性（SRS §8 NFR-P/R/S/A/C）逐条对照实现。
+- [ ] P3-4 测试用例：实现 LLD §11 的 TC-U-001~008 单元测试 + TC-I-001~007 集成测试（能在环境里跑的优先）。
+- [ ] P3-5 功能完成矩阵：新建/更新「功能完成矩阵」文档，对照 SRS §9 与 §10 总体验收逐项打勾，列出未编译验证项。
+
+## 日志
+（每轮在此追加：`- [x] <条目> @<commit短哈希> — <一句话>`）
