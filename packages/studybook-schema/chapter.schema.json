@@ -79,6 +79,10 @@
               "multi-blank-handwriting",
               "rewrite-sentence-handwriting",
               "short-answer-handwriting",
+              "choice",
+              "true-false",
+              "match",
+              "order-words",
               "correction-handwriting"
             ]
           },

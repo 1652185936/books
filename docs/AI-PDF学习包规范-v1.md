@@ -56,6 +56,7 @@ schemas/
 {
   "format": "ai.studybook",
   "formatVersion": "1.0.0",
+  "contentVersion": "1.0.0",
   "packageId": "essential-grammar-in-use-zh-3e",
   "createdAt": "2026-06-19T12:00:00Z",
   "generator": {
@@ -77,6 +78,8 @@ schemas/
   "checksums": "checksums.json"
 }
 ```
+
+`contentVersion` 是内容版本（语义化版本），与 `formatVersion` 相互独立：`formatVersion` 决定协议主版本兼容性（IMP-006 白名单），`contentVersion` 是去重与升级判定键。应用按 `packageId + contentVersion` 识别“重复导入”与“新版本覆盖”，并映射到 `books.content_version`（见《06-协议到数据库映射规范》§1）。
 
 ## 4. book.json
 
@@ -309,11 +312,15 @@ schemas/
 - `multi-blank-handwriting`
 - `rewrite-sentence-handwriting`
 - `short-answer-handwriting`
+- `choice`
+- `true-false`
+- `match`
+- `order-words`
 - `correction-handwriting`
 
-v1 应用只接受以上五种手写题型。转换器遇到选择、判断、连线、排序等原书练习时，
-必须将其改造成语义等价的手写短答/改写题，或加入 `report.json.reviewQueue` 等待人工处理；
-不得输出应用不支持的题型。
+v1 **保留并接受以上全部九种题型**。五种手写题型完整支持作答与判分；
+`choice`/`true-false`/`match`/`order-words` 四种非手写题型的交互作答列入后续迭代，
+转换器可如实输出，应用导入后保留并以占位提示展示，不得静默丢弃。
 
 ### 6.2 判分约束
 

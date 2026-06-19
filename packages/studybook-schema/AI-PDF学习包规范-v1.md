@@ -312,11 +312,15 @@ schemas/
 - `multi-blank-handwriting`
 - `rewrite-sentence-handwriting`
 - `short-answer-handwriting`
+- `choice`
+- `true-false`
+- `match`
+- `order-words`
 - `correction-handwriting`
 
-v1 应用只接受以上五种手写题型。转换器遇到选择、判断、连线、排序等原书练习时，
-必须将其改造成语义等价的手写短答/改写题，或加入 `report.json.reviewQueue` 等待人工处理；
-不得输出应用不支持的题型。
+v1 **保留并接受以上全部九种题型**。五种手写题型完整支持作答与判分；
+`choice`/`true-false`/`match`/`order-words` 四种非手写题型的交互作答列入后续迭代，
+转换器可如实输出，应用导入后保留并以占位提示展示，不得静默丢弃。
 
 ### 6.2 判分约束
 

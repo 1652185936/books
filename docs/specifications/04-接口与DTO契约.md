@@ -348,7 +348,7 @@ interface HandwritingService {
 
 ## 6. 练习与判分 DTO
 
-第一版只支持手写题型：
+练习题型（v1 保留全部九种；非手写四种的作答交互列入后续迭代）：
 
 ```ts
 type ExerciseType =
@@ -356,6 +356,10 @@ type ExerciseType =
   | 'multi-blank-handwriting'
   | 'rewrite-sentence-handwriting'
   | 'short-answer-handwriting'
+  | 'choice'
+  | 'true-false'
+  | 'match'
+  | 'order-words'
   | 'correction-handwriting';
 
 type ExerciseBlank = {
