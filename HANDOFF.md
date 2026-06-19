@@ -32,7 +32,7 @@
 
 ## 3. Git 状态与如何回看
 
-- 仓库已 `git init`，工作区在 `D:\worksace\other\books`，尚未配远端。
+- 远端：`https://github.com/1652185936/books.git`（默认分支 `master`）。接手直接 `git clone https://github.com/1652185936/books.git`。
 - 提交链（每批一个 commit，可逐批 diff）：
 
   ```text
