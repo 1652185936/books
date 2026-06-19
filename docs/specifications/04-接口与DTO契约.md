@@ -692,7 +692,7 @@ type StatsResult = {
   bookId?: Id;
   activeStudyMs: number;          // 有效学习时长（learning_events 派生）
   studiedDays: number;
-  currentStreakDays: number;      // 连续学习天数（按设备本地时区，见 LLD §3.12.1 口径）
+  currentStreakDays: number;      // 连续学习天数（按设备本地时区，见 LLD §3.13.1/§3.13A 口径）
   exerciseAttempted: number;
   exerciseCorrectRate: number;    // 0..1
   reviewCompleted: number;
