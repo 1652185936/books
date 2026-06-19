@@ -3,7 +3,7 @@
 | 项目 | 内容 |
 |---|---|
 | 文档编号 | MX-API-001 |
-| 版本 | 1.1.0 |
+| 版本 | 1.2.0 |
 | 状态 | 评审修订版 |
 | 适用范围 | HLD §8、LLD §7 |
 | 编写日期 | 2026-06-19 |
@@ -499,6 +499,12 @@ type ReviewSession = {
   startedAt: EpochMs;
 };
 
+type TodayReviewSummary = {
+  dueCount: number;       // 今日到期卡片数
+  completedCount: number; // 今日已完成（review_logs.reviewed_at 落在当日）
+  dailyGoal: number;      // review.dailyGoal 设置值
+};
+
 interface ReviewRepository {
   upsertFromSource(input: CreateReviewCardInput): Promise<ReviewCard>;
   getDue(now: EpochMs, bookId?: Id): Promise<ReviewCard[]>;
@@ -508,10 +514,250 @@ interface ReviewRepository {
 interface ReviewScheduler {
   createSession(now: EpochMs, bookId?: Id): Promise<ReviewSession>;
   applyRating(cardId: Id, rating: ReviewRating, now: EpochMs): Promise<ScheduleResult>;
+  getTodaySummary(now: EpochMs, bookId?: Id): Promise<TodayReviewSummary>;
 }
 ```
 
-## 8. 备份 DTO
+「一次复习会话内卡片去重」由 `createSession` 在会话内自持已出现卡片集合实现，属会话层内存状态，
+不暴露为独立接口（满足 F09 验收『同一张卡不会在一次复习会话中无理由重复』，R-053）。
+
+## 8. 批注 DTO（F08，R-051）
+
+```ts
+type RelocationState = 'stable' | 'needs-relocation' | 'orphaned';
+
+type AnnotationAnchor = {
+  sectionId?: Id;
+  blockId?: Id;
+  rangeStart?: number;     // 文本高亮字符起点（与 highlights.range_start 对应）
+  rangeEnd?: number;       // 文本高亮字符终点
+  quoteText?: string;      // 锚定文本，升级重定位用
+  coordinate?: JsonObject; // 手写笔记画布坐标
+};
+
+type Note = {
+  id: Id;
+  bookId: Id;
+  chapterId: Id;
+  sectionId?: Id;
+  blockId?: Id;
+  type: 'handwriting' | 'text';
+  textContent: string;
+  anchor: AnnotationAnchor;
+  color: string;               // #RRGGBB
+  relocationState: RelocationState;
+  strokeRecordId?: Id;         // type='handwriting' 时关联 handwriting_records
+  createdAt: EpochMs;
+  updatedAt: EpochMs;
+};
+
+type Highlight = {
+  id: Id;
+  bookId: Id;
+  chapterId: Id;
+  blockId: Id;
+  rangeStart: number;
+  rangeEnd: number;            // > rangeStart 且 ≤ 保存时 plainText 长度
+  quoteText: string;
+  color: string;
+  relocationState: RelocationState;
+  createdAt: EpochMs;
+};
+
+type Bookmark = {
+  id: Id;
+  bookId: Id;
+  chapterId: Id;
+  blockId?: Id;                // scope='chapter' 时为空
+  scope: 'chapter' | 'block';
+  label: string;
+  createdAt: EpochMs;
+};
+
+type SaveNoteInput = {
+  id?: Id;                     // 省略=新建，传入=更新
+  bookId: Id;
+  chapterId: Id;
+  sectionId?: Id;
+  blockId?: Id;
+  type: 'handwriting' | 'text';
+  textContent: string;
+  anchor: AnnotationAnchor;
+  color: string;
+  strokeRecordId?: Id;
+};
+
+type CreateHighlightInput = {
+  bookId: Id;
+  chapterId: Id;
+  blockId: Id;
+  rangeStart: number;
+  rangeEnd: number;
+  quoteText: string;
+  color: string;
+};
+
+type ToggleBookmarkInput = {
+  bookId: Id;
+  chapterId: Id;
+  blockId?: Id;
+  scope: 'chapter' | 'block';
+  label?: string;
+};
+
+type AnnotationListQuery = {
+  bookId: Id;
+  chapterId?: Id;
+  includeRelocation?: boolean; // 默认 false：仅 stable；true 时含 needs-relocation/orphaned
+};
+
+interface AnnotationRepository {
+  listNotes(query: AnnotationListQuery): Promise<Note[]>;
+  listHighlights(query: AnnotationListQuery): Promise<Highlight[]>;
+  listBookmarks(query: AnnotationListQuery): Promise<Bookmark[]>;
+  saveNote(input: SaveNoteInput): Promise<Note>;
+  createHighlight(input: CreateHighlightInput): Promise<Highlight>;
+  toggleBookmark(input: ToggleBookmarkInput): Promise<Bookmark | null>; // 已存在则移除并返回 null
+  softDeleteNote(noteId: Id): Promise<void>;       // 写 notes.deleted_at
+  softDeleteHighlight(highlightId: Id): Promise<void>;
+  removeBookmark(bookmarkId: Id): Promise<void>;   // bookmarks 无软删除列，物理删除
+  listNeedingRelocation(bookId: Id): Promise<{ notes: Note[]; highlights: Highlight[] }>;
+  relocate(target: 'note' | 'highlight', id: Id, anchor: AnnotationAnchor): Promise<void>;
+}
+
+interface AnnotationService {
+  scheduleAutoSave(input: SaveNoteInput): void;     // 内存缓冲 + 周期快照（HLD §5.8 / FR-F08-05）
+  flush(bookId: Id, chapterId: Id): Promise<void>;  // 页面退出前强制落盘
+  createHighlight(input: CreateHighlightInput): Promise<Highlight>;
+  eraseHighlight(highlightId: Id): Promise<void>;
+  toggleBookmark(input: ToggleBookmarkInput): Promise<Bookmark | null>;
+  listRelocations(bookId: Id): Promise<{ notes: Note[]; highlights: Highlight[] }>;
+  relocateNote(noteId: Id, anchor: AnnotationAnchor): Promise<void>;
+  relocateHighlight(highlightId: Id, anchor: AnnotationAnchor): Promise<void>;
+}
+```
+
+手写笔记的笔迹采集、橡皮擦与撤销由 `HandwritingService` 的 `StrokeSession`（§5）承载；
+`AnnotationService` 只负责文本/锚点的自动保存编排与升级后重定位。
+
+## 9. 错题本与统计 DTO（F10/F11，R-052）
+
+```ts
+type WrongItemErrorType =
+  | 'missing-auxiliary'
+  | 'wrong-tense'
+  | 'wrong-form'
+  | 'spelling'
+  | 'missing-word'
+  | 'extra-word'
+  | 'word-order'
+  | 'recognition-uncertain'
+  | 'other';
+
+type WrongItemStatus = 'active' | 'mastered' | 'dismissed';
+
+type WrongItemFilter = {
+  bookId?: Id;          // 省略=全部书籍
+  chapterId?: Id;
+  grammarPoint?: string;
+  errorType?: WrongItemErrorType;
+  status?: WrongItemStatus; // 省略默认 'active'
+  since?: EpochMs;
+  until?: EpochMs;
+};
+
+type WrongItemSummary = {
+  id: Id;
+  exerciseId: Id;
+  bookId: Id;
+  chapterId: Id;
+  errorType: WrongItemErrorType;
+  errorCount: number;
+  correctStreak: number;
+  status: WrongItemStatus;
+  nextDueAt?: EpochMs;
+  updatedAt: EpochMs;
+};
+
+type WrongItemDetail = WrongItemSummary & {
+  exercise: ExerciseDetail;
+  latestAnswers: ConfirmedAnswer[];   // 用户答案（FR-F10-03）
+  latestResult: GradeResult;          // 逐空对错与错误原因
+};
+
+type StatRange = 'day' | 'week' | 'month';
+
+type StatsResult = {
+  range: StatRange;
+  bookId?: Id;
+  activeStudyMs: number;          // 有效学习时长（learning_events 派生）
+  studiedDays: number;
+  currentStreakDays: number;      // 连续学习天数（按设备本地时区，见 LLD §3.12.1 口径）
+  exerciseAttempted: number;
+  exerciseCorrectRate: number;    // 0..1
+  reviewCompleted: number;
+  masteredCount: number;
+  weakPoints: Array<{ grammarPoint: string; errorCount: number }>;
+  perDay: Array<{ date: string; activeStudyMs: number; correctRate: number }>; // date 为 YYYY-MM-DD
+  computedAt: EpochMs;
+};
+
+type LearningEventInput = {
+  bookId: Id;
+  chapterId?: Id;
+  type: 'open' | 'active' | 'pause';
+  occurredAt: EpochMs;
+  activeDurationMs?: number;      // type='active' 时的心跳时长
+};
+
+interface WrongBookRepository {
+  query(filter: WrongItemFilter): Promise<WrongItemSummary[]>;
+  getDetail(wrongItemId: Id): Promise<WrongItemDetail>;
+  listForBatch(filter: WrongItemFilter, limit: number): Promise<Id[]>; // 批量练习的 exerciseId 列表
+  markMastered(wrongItemId: Id): Promise<void>;  // 仅置 status='mastered'，不覆盖 exercise_attempts 历史
+}
+
+interface StatisticsService {
+  recordEvent(input: LearningEventInput): Promise<void>; // learning_events 唯一写入口（LLD §3.13）
+  getMetrics(range: StatRange, bookId?: Id): Promise<StatsResult>;
+  recompute(bookId?: Id): Promise<StatsResult>; // 从原始 events/attempts/review_logs 重算（FR-F11-05）
+}
+```
+
+统计指标一律由 `StatisticsService` 从原始事件重算，页面不得自行累加（HLD §5.11，R-052）。
+
+## 10. 设置 DTO（F12，R-053）
+
+```ts
+type SettingsKey =
+  | 'handwriting.penColor'
+  | 'handwriting.penWidth'
+  | 'recognition.failureAction'
+  | 'review.dailyGoal'
+  | 'reading.fontScale'
+  | 'wrongbook.masteryStreak';
+
+// 键到值类型的映射，与 LLD §3.24 user_settings 第一版键一致
+type SettingsValueMap = {
+  'handwriting.penColor': string;                  // #RRGGBB
+  'handwriting.penWidth': number;                  // 0.5..20
+  'recognition.failureAction': 'retry' | 'rewrite';
+  'review.dailyGoal': number;                      // 1..500
+  'reading.fontScale': number;                     // 0.8..1.6
+  'wrongbook.masteryStreak': number;               // 1..10
+};
+
+interface SettingsService {
+  get<K extends SettingsKey>(key: K): Promise<SettingsValueMap[K]>;
+  getAll(): Promise<SettingsValueMap>;
+  set<K extends SettingsKey>(key: K, value: SettingsValueMap[K]): Promise<void>; // 键级校验，越界/非法拒绝
+}
+```
+
+`set` 必须按 `SettingsValueMap` 与 LLD §3.24 约束做键级校验，校验失败抛可转 `AppError` 的领域错误，
+不写库（HLD §5.12『写入必须经过键级校验』，R-053）。
+
+## 11. 备份 DTO
 
 ```ts
 type ExportOptions = {
@@ -541,10 +787,14 @@ interface BackupService {
 }
 ```
 
-## 9. 契约一致性规则
+## 12. 契约一致性规则
 
 1. `GradingService` 负责异步取数和持久化编排；`GradingEngine` 是同步纯函数。
 2. 多空题必须返回 `perBlank`，整体得分为各空分数算术平均。
 3. 识别失败不构造 `ConfirmedAnswer`，也不调用 `GradingService`。
 4. `ReviewRepository.upsertFromSource` 是创建复习卡的唯一入口。
 5. 页面只能依赖 Service/ViewModel，不直接持有数据库事务或文件路径。
+6. `learning_events` 的唯一写入口是 `StatisticsService.recordEvent`；统计指标全部由 `StatisticsService` 重算，页面与错题本不得自行累加（R-052）。
+7. `WrongBookRepository.markMastered` 只改 `wrong_items.status`，绝不覆盖或删除 `exercise_attempts` 历史（R-052）。
+8. `SettingsService.set` 必须按 `SettingsValueMap` 与 LLD §3.24 做键级校验后才落库（R-053）。
+9. 笔迹采集/橡皮擦/撤销归 `HandwritingService.StrokeSession`；`AnnotationService` 只编排文本批注的自动保存、退出落盘与升级重定位（R-051）。
