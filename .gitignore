@@ -1,0 +1,9 @@
+# 受版权保护的原始 PDF —— 禁止入库（CLAUDE.md §8「禁止导入或捆绑用户原 PDF」）
+docs/*.pdf
+
+# Python（校验器/构建脚本运行产物）
+__pycache__/
+*.pyc
+
+# Ralph 运行哨兵
+.ralph/STOP
