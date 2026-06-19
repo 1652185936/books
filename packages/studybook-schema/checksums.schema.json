@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/ai.studybook/checksums.schema.json",
+  "title": "AI StudyBook Checksums",
+  "type": "object",
+  "required": ["algorithm", "files"],
+  "properties": {
+    "algorithm": {"const": "sha256"},
+    "files": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-fA-F]{64}$"
+      }
+    }
+  },
+  "additionalProperties": true
+}

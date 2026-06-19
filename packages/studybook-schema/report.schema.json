@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/ai.studybook/report.schema.json",
+  "title": "AI StudyBook Conversion Report",
+  "type": "object",
+  "required": ["schemaVersion", "status", "stats"],
+  "properties": {
+    "schemaVersion": {"type": "string", "pattern": "^1\\.[0-9]+\\.[0-9]+$"},
+    "status": {
+      "enum": ["completed", "completed-with-warnings", "failed"]
+    },
+    "stats": {
+      "type": "object",
+      "required": ["pdfPages", "chapters"],
+      "properties": {
+        "pdfPages": {"type": "integer", "minimum": 0},
+        "chapters": {"type": "integer", "minimum": 0},
+        "exercises": {"type": "integer", "minimum": 0},
+        "illustrations": {"type": "integer", "minimum": 0},
+        "ocrMeanConfidence": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "reviewQueue": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "severity", "type", "file", "message"],
+        "properties": {
+          "id": {"type": "string"},
+          "severity": {"enum": ["low", "medium", "high"]},
+          "type": {"type": "string"},
+          "file": {"type": "string"},
+          "jsonPath": {"type": "string"},
+          "pdfPages": {
+            "type": "array",
+            "items": {"type": "integer", "minimum": 1}
+          },
+          "message": {"type": "string"}
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}
