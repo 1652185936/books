@@ -87,6 +87,7 @@
           "answers": {"type": "object"},
           "grading": {"type": "object"},
           "feedback": {"type": "object"},
+          "allowEmpty": {"type": "boolean"},
           "sourceRef": {"type": "object"}
         }
       }
