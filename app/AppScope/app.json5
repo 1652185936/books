@@ -1,0 +1,11 @@
+{
+  // 应用级元数据（AppScope）。bundleName/版本号为第一版基线，签名留待开发者本地配置。
+  "app": {
+    "bundleName": "com.moxue.bookshelf",
+    "vendor": "moxue",
+    "versionCode": 1000000,
+    "versionName": "1.0.0",
+    "icon": "$media:app_icon",
+    "label": "$string:app_name"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "entry",
+  "version": "1.0.0",
+  "description": "墨学书架 entry 模块（ai.studybook 学习包消费端入口）",
+  "main": "",
+  "author": "moxue",
+  "license": "",
+  "dependencies": {}
+}

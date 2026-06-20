@@ -5,7 +5,8 @@
 每条尽量是「一轮可完成 + 可验证」的粒度。依赖靠顺序表达（靠前的先做）。
 
 ## 阶段 0 — 工程与基础设施
-- [ ] P0-1 HarmonyOS 工程脚手架：`app/` 下建 DevEco/hvigor 工程（module.json5、app.json5、ArkTS 严格类型配置、目录骨架 ets/{pages,viewmodel,service,repository,db,model,resource,utils}），可被 hvigor 识别。
+- [x] P0-1 HarmonyOS 工程脚手架：`app/` 下建 DevEco/hvigor 工程（module.json5、app.json5、ArkTS 严格类型配置、目录骨架 ets/{pages,viewmodel,service,repository,db,model,resource,utils}），可被 hvigor 识别。
+  > 备注：目录骨架按 LLD §1.2 真值建（pages/components/viewmodels/domain/repositories/services/database/storage/recognition/utils；资源置 `entry/src/main/resources/`，非 ets 内），覆盖 BACKLOG 的非正式命名。未编译验证：缺 HarmonyOS SDK / hvigor，仅做引用自洽与 JSON 校验。
 - [ ] P0-2 通用类型与 DTO：按《04 契约》§1 定义 `Id/EpochMs/JsonObject/PageRequest/PageResult/AppError`，并为各域 DTO 建 ArkTS model 文件（导入/书籍内容/进度/手写识别/练习判分/复习/批注/错题统计/设置/备份），与 04 字面一致。
 - [ ] P0-3 数据库迁移 V001：按 LLD §3 全部表与索引（books…content_review_flags、§3.25）写 `V001__initial.sql`，含所有 NOT NULL/CHECK/UNIQUE/FK；relationalStore 封装 + 迁移执行器（迁移表、单调递增、只执行一次）。
 - [ ] P0-4 Repository 基类与事务封装：统一 Repository 接口约定（页面不碰 SQL）、事务/可回滚封装、`AppError` 领域错误。
@@ -42,3 +43,4 @@
 
 ## 日志
 （每轮在此追加：`- [x] <条目> @<commit短哈希> — <一句话>`）
+- [x] P0-1 HarmonyOS 工程脚手架 @41bea58 — 补齐 AppScope/app.json5、entry module.json5/build-profile/oh-package/hvigorfile/obfuscation、EntryAbility 与 pages/Index 入口、base 资源（string/color/main_pages）及 LLD §1.2 ets 目录骨架（.gitkeep 占位）。
