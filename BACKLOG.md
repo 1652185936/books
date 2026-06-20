@@ -7,8 +7,14 @@
 ## 阶段 0 — 工程与基础设施
 - [x] P0-1 HarmonyOS 工程脚手架：`app/` 下建 DevEco/hvigor 工程（module.json5、app.json5、ArkTS 严格类型配置、目录骨架 ets/{pages,viewmodel,service,repository,db,model,resource,utils}），可被 hvigor 识别。
   > 备注：目录骨架按 LLD §1.2 真值建（pages/components/viewmodels/domain/repositories/services/database/storage/recognition/utils；资源置 `entry/src/main/resources/`，非 ets 内），覆盖 BACKLOG 的非正式命名。未编译验证：缺 HarmonyOS SDK / hvigor，仅做引用自洽与 JSON 校验。
-- [ ] P0-2 通用类型与 DTO：按《04 契约》§1 定义 `Id/EpochMs/JsonObject/PageRequest/PageResult/AppError`，并为各域 DTO 建 ArkTS model 文件（导入/书籍内容/进度/手写识别/练习判分/复习/批注/错题统计/设置/备份），与 04 字面一致。
-- [ ] P0-3 数据库迁移 V001：按 LLD §3 全部表与索引（books…content_review_flags、§3.25）写 `V001__initial.sql`，含所有 NOT NULL/CHECK/UNIQUE/FK；relationalStore 封装 + 迁移执行器（迁移表、单调递增、只执行一次）。
+- [x] P0-2 通用类型与 DTO：按《04 契约》§1 定义 `Id/EpochMs/JsonObject/PageRequest/PageResult/AppError`，并为各域 DTO 建 ArkTS model 文件（导入/书籍内容/进度/手写识别/练习判分/复习/批注/错题统计/设置/备份），与 04 字面一致。
+  > 落地：`entry/src/main/ets/domain/entities/` 下 11 个文件（common/import/content/progress/handwriting/exercise/review/annotation/wrongbook-stats/settings/backup），逐字段对齐 04 §1~§11（含全部 19 个 Repository/Service/Engine 接口契约）。
+  > ArkTS 适配（字段集/语义不变）：交叉类型 `&`→`interface extends`（BookDetail/WrongItemDetail）；索引访问 `ReviewCard['state']`/`ExerciseDetail['gradingOptions']`→具名类型 `ReviewCardState`/`GradingOptions`；联合内联支与内联返回对象拆具名接口（ImportPhaseEvent/RecognitionSuccess/RecognitionFailure/RelocationList/WeakPoint/DailyStat/StrokeCanvas/ContinueTarget）。
+  > 验证：11 文件经独立 `tsc --strict --noEmit` 交叉核验通过（跨文件 import/导出、联合、extends、泛型自洽）。未编译验证（缺 HarmonyOS SDK）两处：①`JsonObject` 递归 Record 取值（保持 04 字面，tsc 判 TS2456 为 ArkTS↔tsc 已知分歧，详见文件头注释）；②`SettingsService.get/set` 的泛型索引访问返回 `SettingsValueMap[K]`（保持 04 字面，待 F12 用 SDK 实测，必要时按优先级链登记裁决）。
+- [x] P0-3 数据库迁移 V001：按 LLD §3 全部表与索引（books…content_review_flags、§3.25）写 `V001__initial.sql`，含所有 NOT NULL/CHECK/UNIQUE/FK；relationalStore 封装 + 迁移执行器（迁移表、单调递增、只执行一次）。
+  > 落地：`resources/rawfile/migrations/V001__initial.sql`（22 业务表 + 17 显式索引，逐表对齐 §3.3~§3.25）+ `ets/database/{SqlScript,MigrationRunner,Database}.ets` + `ets/database/migrations/MigrationRegistry.ets`。元数据表 `db_meta`(§3.2)/`schema_migrations`(迁移表) 由执行器 `CREATE TABLE IF NOT EXISTS` 引导。
+  > 约束亮点：枚举全 NOT NULL CHECK（R-039）；accepted_answers 主答案部分唯一索引；bookmarks 章节/块级部分唯一（R-012）；handwriting_records 三态互斥 XOR + 对应 CHECK（R-041）；exercises 九种题型 CHECK（保留非手写四种，R-063）；recognition_error_code 形式化 CHECK（R-057）。
+  > 自验证：V001 全量 DDL 经 SQLite（relationalStore 底座）解析建表通过（24 表）+ 约束冒烟测试（FK/枚举/长度/题型/主答案/笔迹 XOR/收藏唯一/版本唯一）全通过。未编译验证：缺 HarmonyOS SDK，ArkTS 侧仅引用自洽核查（relationalStore/resourceManager/TextDecoder 以 API 12 为准）。
 - [ ] P0-4 Repository 基类与事务封装：统一 Repository 接口约定（页面不碰 SQL）、事务/可回滚封装、`AppError` 领域错误。
 - [ ] P0-5 i18n 资源骨架：`resources/{base,zh_CN,en_US}/element/string.json`；按 LLD §3.14A 落 error_code→资源键映射的全部键中英文文案（§3.14B 文案表）。
 - [ ] P0-6 路由骨架：按 LLD §6 各页面路由（含 §6.13 `from`/`bookId`/`range` 约定）建 Navigation 路由表与占位页。
@@ -44,3 +50,6 @@
 ## 日志
 （每轮在此追加：`- [x] <条目> @<commit短哈希> — <一句话>`）
 - [x] P0-1 HarmonyOS 工程脚手架 @41bea58 — 补齐 AppScope/app.json5、entry module.json5/build-profile/oh-package/hvigorfile/obfuscation、EntryAbility 与 pages/Index 入口、base 资源（string/color/main_pages）及 LLD §1.2 ets 目录骨架（.gitkeep 占位）。
+- [x] P0-2 通用类型与 DTO @556db45 — `domain/entities/` 11 个 ArkTS 模型对齐《04》§1~§11（本轮恢复提交：上一轮 PowerShell 工具异常落盘未提交）。
+- [x] P0-3 数据库迁移 V001 @531702a — V001__initial.sql（22 业务表 + 17 索引，§3.3~§3.25）+ SqlScript/MigrationRunner/Database/MigrationRegistry；DDL 经 SQLite 解析建表 + 约束冒烟测试全通过，relationalStore 封装与迁移执行器（迁移表/单调递增/单事务/只执行一次/可回滚）就绪。
+- [x] P0-2 通用类型与 DTO @556db45 — 在 `domain/entities/` 新增 11 个 ArkTS 模型文件对齐《04》§1~§11（DTO + 19 接口契约），经 `tsc --strict --noEmit` 交叉核验通过。（提交在 ralph 本轮恢复：上一轮 PowerShell 工具异常 Exit 66 落盘未提交，本轮补提交为 @556db45。）
