@@ -59,4 +59,4 @@
 - [x] P0-3 数据库迁移 V001 @531702a — V001__initial.sql（22 业务表 + 17 索引，§3.3~§3.25）+ SqlScript/MigrationRunner/Database/MigrationRegistry；DDL 经 SQLite 解析建表 + 约束冒烟测试全通过，relationalStore 封装与迁移执行器（迁移表/单调递增/单事务/只执行一次/可回滚）就绪。
 - [x] P0-2 通用类型与 DTO @556db45 — 在 `domain/entities/` 新增 11 个 ArkTS 模型文件对齐《04》§1~§11（DTO + 19 接口契约），经 `tsc --strict --noEmit` 交叉核验通过。（提交在 ralph 本轮恢复：上一轮 PowerShell 工具异常 Exit 66 落盘未提交，本轮补提交为 @556db45。）
 - [x] P0-4 Repository 基类与事务封装 @1d9c2fb — 新增 `utils/AppErrors.ets`（§3.14A 码→资源键映射 25 条逐行一致 + 领域错误工厂/脱敏）、`repositories/BaseRepository.ets`（页面不碰 SQL、ResultSet 安全遍历、查询异常归一），并给 `database/Database.ets` 增 `withTransaction` 事务/可回滚封装；映射经 Python 与规格逐行比对 PASS。
-- [x] P0-5 i18n 资源骨架 @pending — 三份 `resources/{base,zh_CN,en_US}/element/string.json` 落 §3.14A 全 25 键 + §3.14B 4 通用键中英文文案；登记并裁决 i18n 点分键 ↔ HarmonyOS `restool` 命名实现期冲突（保留逻辑键真值、物理名 `.`→`_` 转写、`AppErrors.physicalKeyFor` 桥接）；JSON 解析/全键齐备/命名合法/给定文案逐字一致核验 PASS。
+- [x] P0-5 i18n 资源骨架 @54ac27f — 三份 `resources/{base,zh_CN,en_US}/element/string.json` 落 §3.14A 全 25 键 + §3.14B 4 通用键中英文文案；登记并裁决 i18n 点分键 ↔ HarmonyOS `restool` 命名实现期冲突（保留逻辑键真值、物理名 `.`→`_` 转写、`AppErrors.physicalKeyFor` 桥接）；JSON 解析/全键齐备/命名合法/给定文案逐字一致核验 PASS。
