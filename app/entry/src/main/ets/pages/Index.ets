@@ -11,8 +11,12 @@ import { BookshelfPage } from './bookshelf/BookshelfPage';
 @Entry
 @Component
 struct Index {
-  /** 全局导航栈：承载 P-F02..P-F12 的 NavDestination 路由（见 route_map.json）。 */
-  private pageStack: NavPathStack = new NavPathStack();
+  /**
+   * 全局导航栈：承载 P-F02..P-F12 的 NavDestination 路由（见 route_map.json）。
+   * 以 `@Provide('pageStack')` 下发给根内容书架页 P-F01（BookshelfPage 经 `@Consume('pageStack')` 取用，
+   * 驱动「导入/继续学习/进入目录」等跳转，F01 落地接线）。
+   */
+  @Provide('pageStack') pageStack: NavPathStack = new NavPathStack();
 
   build() {
     Navigation(this.pageStack) {
