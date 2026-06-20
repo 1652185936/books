@@ -28,7 +28,10 @@
   > 自验证：4 份 JSON 经 Python 解析通过；交叉一致性脚本 PASS（9 条 route_map name⊆RouteName 值、pageSourceFile 均存在、buildFunction 在对应文件定义、NavDestination 存在、ROUTE_TABLE titleKey 与各页 `$r('app.string.*')` 键均在三语 string.json 齐备）；`Routes.ets` 经 `tsc --strict --noEmit` 通过 + 归一化函数 13 例运行时单测全 PASS（含 from/range 非法回退、bookId 空白聚合、默认值）。未编译验证：缺 HarmonyOS SDK，ArkUI 侧（Navigation/NavDestination/@Builder/route_map 解析/`$r` 桥接）仅引用自洽核查，以 API 12 系统路由表为准，待 SDK 编译实测。
 
 ## 阶段 1 — 导入内核（F02/F03 的核心，多功能依赖）
-- [ ] P1-1 ZIP 安全校验：路径穿越/条目数/大小/压缩比/扩展名（LLD §2.1、IMP-001~004），不解压先检查。
+- [x] P1-1 ZIP 安全校验：路径穿越/条目数/大小/压缩比/扩展名（LLD §2.1、IMP-001~004），不解压先检查。
+  > 落地三件（`services/import/`）：①`ImportLimits.ets`——§2.1「ZIP 资源限制」表 10 项阈值 + 允许扩展名 `.json/.webp/.png/.jpg/.jpeg` 固化常量 + `defaultValidationOptions()`（满足《04》§2 `ValidationOptions` DTO，主版本 [1] 取自 manifest.schema `formatVersion ^1\.x\.y`）。②`ZipCentralDirectory.ets`——纯函数 ZIP **中央目录**解析器（EOCD 末尾扫描 + 文件头枚举，**不解压**即得每条目相对路径/压缩前后大小；以中央目录为准而非可被伪造的本地头/数据描述符；自带最小 UTF-8 解码，零 `@ohos.*` 依赖；ZIP64 哨兵直接判 `exceeds-zip64`）。③`ZipSafetyValidator.ets`——逐条目安全判定，映射 IMP-001~004（FR-F03-01/BR-002/NFR-S-002，§2.4 step2）。
+  > 错误码分类裁决（非规格冲突，仅在既有 IMP-001~004 内确定性分派，不新增/不改写语义）：IMP 表 ZIP 阶段仅 4 码；§2.1 把条目数/各类大小/路径深度/文件名·路径长度/允许扩展名统一归「资源限制」，故除路径穿越(IMP-002)、压缩比(IMP-004) 外的资源约束（含伪造扩展名）统一落 IMP-003，子原因记入脱敏 `detail`。
+  > 自验证：用 Python 制 11 个真实 ZIP 夹具（正常包/`..`穿越/绝对路径/反斜杠/`.svg`/嵌套zip/压缩炸弹/超大JSON/超深路径/超长段/非ZIP）经算法等价 Node 端口运行 **13/13 PASS**（含正常包未解压枚举 5 条目 + opt 改阈值验 too-many-entries/archive-too-large 分支），对齐 LLD §11 TC-U-001/002。未编译验证：缺 HarmonyOS SDK/tsc，ArkTS 侧仅引用自洽核查（`Uint8Array`/`RegExp`/字面量判别联合以 API 12 为准），实际文件字节读取（URI→bytes）属 P1-3 状态机接线，本轮为不解压安全内核纯逻辑。
 - [ ] P1-2 内置 JSON Schema 校验器：用 `packages/studybook-schema/` 的 manifest/book/chapter/report/checksums 校验暂存文件；忽略包内 schemas/（LLD §2.4 step8）。
 - [ ] P1-3 导入状态机与暂存区：LLD §2.3/§2.4 状态机、隔离暂存、SHA-256 比对（§2.4 step7）、IMP-* 错误码与 §3.14A 文案。
 - [ ] P1-4 导入事务与索引落库：协议→DB 映射（《06》全文）、章节/小节/内容块/练习/空位/答案/复习卡/复核标记落库、chapter_count 事务内重算；原子提升 + 提交（§2.4 step11-13）。
@@ -64,3 +67,4 @@
 - [x] P0-4 Repository 基类与事务封装 @1d9c2fb — 新增 `utils/AppErrors.ets`（§3.14A 码→资源键映射 25 条逐行一致 + 领域错误工厂/脱敏）、`repositories/BaseRepository.ets`（页面不碰 SQL、ResultSet 安全遍历、查询异常归一），并给 `database/Database.ets` 增 `withTransaction` 事务/可回滚封装；映射经 Python 与规格逐行比对 PASS。
 - [x] P0-5 i18n 资源骨架 @54ac27f — 三份 `resources/{base,zh_CN,en_US}/element/string.json` 落 §3.14A 全 25 键 + §3.14B 4 通用键中英文文案；登记并裁决 i18n 点分键 ↔ HarmonyOS `restool` 命名实现期冲突（保留逻辑键真值、物理名 `.`→`_` 转写、`AppErrors.physicalKeyFor` 桥接）；JSON 解析/全键齐备/命名合法/给定文案逐字一致核验 PASS。
 - [x] P0-6 路由骨架 @afd54c9 — `utils/Routes.ets`（10 路由名 + 8 参数接口 + §6.13 三归一化纯函数 + ROUTE_TABLE）、`resources/base/profile/route_map.json` 系统路由表（9 NavDestination）+ module.json5 `routerMap`、`Index.ets` 改 Navigation 容器根页、9 占位页 + `BookshelfPage` + `RoutePlaceholder` 复用组件、三语补 11 条路由标题/占位文案；交叉一致性脚本 + `tsc --strict` + 归一化 13 例单测全 PASS（缺 SDK 未编译）。
+- [x] P1-1 ZIP 安全校验 @<本轮> — `services/import/` 新增 `ImportLimits.ets`（§2.1 阈值/允许扩展名/`defaultValidationOptions`）、`ZipCentralDirectory.ets`（不解压的纯函数中央目录枚举器，自带 UTF-8 解码、ZIP64 哨兵安全拒绝）、`ZipSafetyValidator.ets`（逐条目判定 → IMP-001~004，路径穿越/资源限制/压缩炸弹）；Python 制 11 真实夹具经等价 Node 端口 13/13 PASS（对齐 TC-U-001/002）。错误码在既有 IMP-001~004 内确定性分派（伪造扩展名/路径长度→IMP-003，非新增码）。未编译验证：缺 SDK，文件字节读取留待 P1-3 接线。
