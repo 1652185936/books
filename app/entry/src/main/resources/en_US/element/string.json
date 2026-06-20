@@ -115,6 +115,50 @@
     {
       "name": "state_error",
       "value": "Something went wrong, please retry"
+    },
+    {
+      "name": "route_title_bookshelf",
+      "value": "My Bookshelf"
+    },
+    {
+      "name": "route_title_import_select",
+      "value": "Import Study Pack"
+    },
+    {
+      "name": "route_title_import_validate",
+      "value": "Validate Study Pack"
+    },
+    {
+      "name": "route_title_catalog",
+      "value": "Book Catalog"
+    },
+    {
+      "name": "route_title_lesson",
+      "value": "Lesson"
+    },
+    {
+      "name": "route_title_exercise",
+      "value": "Handwriting Exercise"
+    },
+    {
+      "name": "route_title_review",
+      "value": "Review"
+    },
+    {
+      "name": "route_title_wrongbook",
+      "value": "Wrong-Answer Book"
+    },
+    {
+      "name": "route_title_statistics",
+      "value": "Statistics"
+    },
+    {
+      "name": "route_title_settings",
+      "value": "Settings"
+    },
+    {
+      "name": "route_placeholder_hint",
+      "value": "This page is under construction."
     }
   ]
 }

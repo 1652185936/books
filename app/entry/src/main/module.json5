@@ -11,6 +11,8 @@
     "deliveryWithInstall": true,
     "installationFree": false,
     "pages": "$profile:main_pages",
+    // Navigation 系统路由表（LLD §6）：P-F02..P-F12 子页面经 route_map.json 注册，pushPathByName 解析跳转
+    "routerMap": "$profile:route_map",
     "abilities": [
       {
         "name": "EntryAbility",

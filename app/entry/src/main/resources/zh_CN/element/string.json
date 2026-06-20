@@ -115,6 +115,50 @@
     {
       "name": "state_error",
       "value": "出错了，请重试"
+    },
+    {
+      "name": "route_title_bookshelf",
+      "value": "书架"
+    },
+    {
+      "name": "route_title_import_select",
+      "value": "导入学习包"
+    },
+    {
+      "name": "route_title_import_validate",
+      "value": "校验学习包"
+    },
+    {
+      "name": "route_title_catalog",
+      "value": "书籍目录"
+    },
+    {
+      "name": "route_title_lesson",
+      "value": "章节讲解"
+    },
+    {
+      "name": "route_title_exercise",
+      "value": "手写练习"
+    },
+    {
+      "name": "route_title_review",
+      "value": "复习"
+    },
+    {
+      "name": "route_title_wrongbook",
+      "value": "错题本"
+    },
+    {
+      "name": "route_title_statistics",
+      "value": "学习统计"
+    },
+    {
+      "name": "route_title_settings",
+      "value": "设置"
+    },
+    {
+      "name": "route_placeholder_hint",
+      "value": "页面建设中，后续迭代实现。"
     }
   ]
 }

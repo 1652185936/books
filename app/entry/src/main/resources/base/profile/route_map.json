@@ -1,0 +1,76 @@
+{
+  "routerMap": [
+    {
+      "name": "import/select",
+      "pageSourceFile": "src/main/ets/pages/import/ImportSelectPage.ets",
+      "buildFunction": "ImportSelectPageBuilder",
+      "data": {
+        "description": "P-F02 导入选择页（LLD §6.2）"
+      }
+    },
+    {
+      "name": "import/validate",
+      "pageSourceFile": "src/main/ets/pages/import/ImportValidatePage.ets",
+      "buildFunction": "ImportValidatePageBuilder",
+      "data": {
+        "description": "P-F03 校验页（LLD §6.3，param: jobId）"
+      }
+    },
+    {
+      "name": "book",
+      "pageSourceFile": "src/main/ets/pages/catalog/CatalogPage.ets",
+      "buildFunction": "CatalogPageBuilder",
+      "data": {
+        "description": "P-F04 书籍目录页（LLD §6.4，param: bookId）"
+      }
+    },
+    {
+      "name": "lesson",
+      "pageSourceFile": "src/main/ets/pages/lesson/LessonPage.ets",
+      "buildFunction": "LessonPageBuilder",
+      "data": {
+        "description": "P-F05 章节讲解页（LLD §6.5，param: bookId/chapterId/section?）"
+      }
+    },
+    {
+      "name": "exercise",
+      "pageSourceFile": "src/main/ets/pages/lesson/ExercisePage.ets",
+      "buildFunction": "ExercisePageBuilder",
+      "data": {
+        "description": "P-F06/P-F07 手写练习与判分页（LLD §6.6/§6.7，param: bookId/chapterId/exerciseId/from?）"
+      }
+    },
+    {
+      "name": "review",
+      "pageSourceFile": "src/main/ets/pages/review/ReviewPage.ets",
+      "buildFunction": "ReviewPageBuilder",
+      "data": {
+        "description": "P-F09 复习页（LLD §6.9，param: bookId?）"
+      }
+    },
+    {
+      "name": "wrongbook",
+      "pageSourceFile": "src/main/ets/pages/wrongbook/WrongBookPage.ets",
+      "buildFunction": "WrongBookPageBuilder",
+      "data": {
+        "description": "P-F10 错题本页（LLD §6.10，param: bookId?）"
+      }
+    },
+    {
+      "name": "statistics",
+      "pageSourceFile": "src/main/ets/pages/statistics/StatisticsPage.ets",
+      "buildFunction": "StatisticsPageBuilder",
+      "data": {
+        "description": "P-F11 学习统计页（LLD §6.11，param: bookId?/range?）"
+      }
+    },
+    {
+      "name": "settings",
+      "pageSourceFile": "src/main/ets/pages/settings/SettingsPage.ets",
+      "buildFunction": "SettingsPageBuilder",
+      "data": {
+        "description": "P-F12 设置与数据页（LLD §6.12，param: section?）"
+      }
+    }
+  ]
+}
