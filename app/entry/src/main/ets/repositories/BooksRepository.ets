@@ -9,13 +9,16 @@ import {
   BookListQuery,
   BookStatus,
   ContinueTarget,
+  ChapterSummary,
+  ChapterKind,
+  SearchResult,
   BooksRepository as IBooksRepository
 } from '../domain/entities/content';
 
 /**
  * 书架与书籍仓储（F01，LLD §6.1 / 04 契约 §3）。
  *
- * 本轮只实现 `list`/`get`/`markBroken` 三个方法（`listChapters`/`searchChapters` 属 F04，后续轮落地）。
+ * 实现 `list`/`get`/`markBroken`（F01）与 `listChapters`/`searchChapters`（F04，章节级，LLD §6.4 / 04 契约 §3）。
  * 全部读取经 `BaseRepository.queryList`/`querySingle`，写入经 `runInTransaction`；页面/ViewModel 不直接执行 SQL（CLAUDE.md §5）。
  *
  * 派生口径（唯一真值）：
@@ -174,6 +177,67 @@ export class BooksRepository extends BaseRepository implements IBooksRepository 
   }
 
   /**
+   * 列出某书全部章节摘要（目录页 ChapterList，F04 / LLD §6.4，04 契约 §3 `listChapters`）。
+   *
+   * 单次 `chapters LEFT JOIN reading_progress` 聚合派生口径（唯一真值，LLD §6.4「数据」列）：
+   * - `completionPercent` 取该章 `reading_progress.completion_percent`，无进度行缺省 0；
+   * - `progressStatus` 取该章 `reading_progress.status`，无进度行缺省 'not-started'；
+   * - `reviewStatus` 取 `chapters.review_status`。
+   * 章节全集纳入（含 appendix/answer-key/index 等所有 kind，目录需完整展示），按 `order_no` 升序。
+   * @param bookId 书籍内部主键。
+   * @returns 章节摘要数组（按 order_no 升序；进度字段来自 reading_progress，缺行用默认值）。
+   * @throws AppError 查询失败时抛出 `DB_QUERY_FAILED`。
+   */
+  async listChapters(bookId: Id): Promise<ChapterSummary[]> {
+    // LEFT JOIN 进度表：无进度行时 status/completion_percent 为 NULL，由映射器 readOptionalDouble/toProgressStatus 兜底默认值
+    const sql: string =
+      'SELECT c.id AS id, c.external_id AS external_id, c.book_id AS book_id,' +
+      ' c.order_no AS order_no, c.kind AS kind, c.title AS title, c.title_zh AS title_zh,' +
+      ' c.estimated_minutes AS estimated_minutes, c.review_status AS review_status,' +
+      ' rp.completion_percent AS completion_percent, rp.status AS progress_status' +
+      ' FROM chapters c' +
+      ' LEFT JOIN reading_progress rp ON rp.chapter_id = c.id AND rp.book_id = c.book_id' +
+      ' WHERE c.book_id = ?' +
+      ' ORDER BY c.order_no ASC';
+    // 行映射器：列 → ChapterSummary（进度字段缺行用默认值）
+    const mapper: RowMapper<ChapterSummary> = (cursor: relationalStore.ResultSet): ChapterSummary =>
+      BooksRepository.mapChapterSummaryRow(cursor);
+    return this.queryList(sql, mapper, [bookId]);
+  }
+
+  /**
+   * 章节级搜索（目录页 ChapterSearch，F04 / LLD §6.4，04 契约 §3 `searchChapters`）。
+   *
+   * 命中 `title` / `title_zh`（不区分大小写，LIKE 包含匹配，复用 `escapeLike` 防通配放大）。
+   * `matchedField` 优先取 `title`（命中 title）否则 `titleZh`（命中 title_zh）；`matchedText` 取对应命中字段的原文。
+   * 关键字去空白后为空 → 视为「未发起搜索」，返回空数组（由 VM 据此回落到「正常」全量列表态，不与「无匹配」混淆，LLD §6.4）。
+   * @param bookId 书籍内部主键。
+   * @param keyword 用户输入关键字（含首尾空白，内部去空白）。
+   * @returns 搜索结果数组（按 order_no 升序）；空关键字返回空数组。
+   * @throws AppError 查询失败时抛出 `DB_QUERY_FAILED`。
+   */
+  async searchChapters(bookId: Id, keyword: string): Promise<SearchResult[]> {
+    // 去空白后的关键字（空则不发起搜索，返回空数组）
+    const trimmed: string = keyword.trim();
+    if (trimmed.length === 0) {
+      return [];
+    }
+    // LIKE 通配参数：左右各加 %（escapeLike 转义关键字内 %/_，避免放大匹配）
+    const like: string = `%${BooksRepository.escapeLike(trimmed)}%`;
+    // 命中 title 或 title_zh（SQLite LIKE 对 ASCII 不区分大小写），按 order_no 升序返回
+    const sql: string =
+      'SELECT c.id AS id, c.external_id AS external_id, c.order_no AS order_no,' +
+      ' c.title AS title, c.title_zh AS title_zh' +
+      ' FROM chapters c' +
+      ' WHERE c.book_id = ? AND (c.title LIKE ? OR c.title_zh LIKE ?)' +
+      ' ORDER BY c.order_no ASC';
+    // 行映射器：列 + 关键字 → SearchResult（matchedField/matchedText 据命中字段判定）
+    const mapper: RowMapper<SearchResult> = (cursor: relationalStore.ResultSet): SearchResult =>
+      BooksRepository.mapSearchResultRow(cursor, trimmed);
+    return this.queryList(sql, mapper, [bookId, like, like]);
+  }
+
+  /**
    * 查询某书的续读目标：取该书 `reading_progress` 中 `last_opened_at` 最大、
    * 且 `completion_percent < 100` 的章节定位（LLD §6.1 / FR-F01-03）。
    * @param bookId 书籍内部主键。
@@ -314,6 +378,60 @@ export class BooksRepository extends BaseRepository implements IBooksRepository 
   }
 
   /**
+   * 把结果集当前行映射为 `ChapterSummary`（listChapters 用）。
+   * 进度字段来自 LEFT JOIN 的 reading_progress：无进度行（列为 NULL）时回落 completionPercent=0 / progressStatus='not-started'。
+   * @param cursor 结果集（停在目标行）。
+   * @returns 章节摘要。
+   */
+  private static mapChapterSummaryRow(cursor: relationalStore.ResultSet): ChapterSummary {
+    // 完成度：reading_progress.completion_percent，缺行（NULL）为 0
+    const completionPercent: number = BooksRepository.readOptionalDouble(cursor, 'completion_percent') ?? 0;
+    // 进度状态：reading_progress.status，缺行（NULL）为 'not-started'
+    const progressStatus: string | undefined = BooksRepository.readOptionalText(cursor, 'progress_status');
+    return {
+      id: cursor.getString(cursor.getColumnIndex('id')),
+      externalId: cursor.getString(cursor.getColumnIndex('external_id')),
+      bookId: cursor.getString(cursor.getColumnIndex('book_id')),
+      orderNo: cursor.getLong(cursor.getColumnIndex('order_no')),
+      kind: BooksRepository.toChapterKind(cursor.getString(cursor.getColumnIndex('kind'))),
+      title: cursor.getString(cursor.getColumnIndex('title')),
+      titleZh: cursor.getString(cursor.getColumnIndex('title_zh')),
+      estimatedMinutes: cursor.getLong(cursor.getColumnIndex('estimated_minutes')),
+      completionPercent: completionPercent,
+      progressStatus: BooksRepository.toProgressStatus(progressStatus),
+      reviewStatus: BooksRepository.toReviewStatus(cursor.getString(cursor.getColumnIndex('review_status')))
+    };
+  }
+
+  /**
+   * 把结果集当前行映射为 `SearchResult`（searchChapters 用）。
+   * `matchedField`/`matchedText` 据关键字命中字段判定：优先 title，否则 titleZh。
+   * @param cursor 结果集（停在目标行）。
+   * @param keyword 去空白后的关键字（不区分大小写做命中判定）。
+   * @returns 搜索结果。
+   */
+  private static mapSearchResultRow(cursor: relationalStore.ResultSet, keyword: string): SearchResult {
+    // 章节英文/中文标题
+    const title: string = cursor.getString(cursor.getColumnIndex('title'));
+    const titleZh: string = cursor.getString(cursor.getColumnIndex('title_zh'));
+    // 不区分大小写命中判定（与 SQL LIKE 的 ASCII 大小写不敏感口径一致）
+    const needle: string = keyword.toLowerCase();
+    const titleHit: boolean = title.toLowerCase().indexOf(needle) >= 0;
+    // 命中字段与命中文本：title 优先，否则 titleZh
+    const matchedField: SearchResult['matchedField'] = titleHit ? 'title' : 'titleZh';
+    const matchedText: string = titleHit ? title : titleZh;
+    return {
+      chapterId: cursor.getString(cursor.getColumnIndex('id')),
+      externalId: cursor.getString(cursor.getColumnIndex('external_id')),
+      title: title,
+      titleZh: titleZh,
+      orderNo: cursor.getLong(cursor.getColumnIndex('order_no')),
+      matchedField: matchedField,
+      matchedText: matchedText
+    };
+  }
+
+  /**
    * 读取可空 TEXT 列：列为 NULL 时返回 undefined，否则返回字符串。
    * @param cursor 结果集（停在目标行）。
    * @param column 列名。
@@ -342,6 +460,21 @@ export class BooksRepository extends BaseRepository implements IBooksRepository 
       return undefined;
     }
     return cursor.getLong(index);
+  }
+
+  /**
+   * 读取可空 REAL 列：列为 NULL 时返回 undefined，否则返回浮点数。
+   * @param cursor 结果集（停在目标行）。
+   * @param column 列名。
+   * @returns 浮点数或 undefined。
+   */
+  private static readOptionalDouble(cursor: relationalStore.ResultSet, column: string): number | undefined {
+    // 列下标
+    const index: number = cursor.getColumnIndex(column);
+    if (cursor.isColumnNull(index)) {
+      return undefined;
+    }
+    return cursor.getDouble(index);
   }
 
   /**
@@ -375,6 +508,45 @@ export class BooksRepository extends BaseRepository implements IBooksRepository 
     }
     // 理论不可达（DB CHECK 兜底）：保守回退 broken，避免静默落空
     return 'broken';
+  }
+
+  /**
+   * 把 DB 中的 chapters.kind 文本收敛为 `ChapterKind` 联合类型（CHECK 已保证取值，显式收敛满足严格类型）。
+   * @param raw kind 列原始文本。
+   * @returns 合法的 ChapterKind（非法值保守回退 'lesson'）。
+   */
+  private static toChapterKind(raw: string): ChapterKind {
+    if (raw === 'lesson' || raw === 'review' || raw === 'appendix' || raw === 'answer-key' || raw === 'index') {
+      return raw;
+    }
+    // 理论不可达（DB CHECK 兜底）：回退 'lesson'，避免静默落空
+    return 'lesson';
+  }
+
+  /**
+   * 把 DB 中的 reading_progress.status 文本（可空）收敛为 `ChapterSummary.progressStatus` 联合类型。
+   * @param raw status 列原始文本（无进度行时为 undefined）。
+   * @returns 合法的 progressStatus（缺行/非法回退 'not-started'）。
+   */
+  private static toProgressStatus(raw: string | undefined): ChapterSummary['progressStatus'] {
+    if (raw === 'not-started' || raw === 'learning' || raw === 'completed' || raw === 'review-due') {
+      return raw;
+    }
+    // 无进度行或非法值：回退 'not-started'（LLD §6.4 缺省口径）
+    return 'not-started';
+  }
+
+  /**
+   * 把 DB 中的 chapters.review_status 文本收敛为 `ChapterSummary.reviewStatus` 联合类型。
+   * @param raw review_status 列原始文本。
+   * @returns 合法的 reviewStatus（非法回退 'unreviewed'）。
+   */
+  private static toReviewStatus(raw: string): ChapterSummary['reviewStatus'] {
+    if (raw === 'unreviewed' || raw === 'needs-review' || raw === 'reviewed') {
+      return raw;
+    }
+    // 理论不可达（DB CHECK 兜底）：回退 'unreviewed'
+    return 'unreviewed';
   }
 
   /**
