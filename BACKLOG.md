@@ -15,7 +15,9 @@
   > 落地：`resources/rawfile/migrations/V001__initial.sql`（22 业务表 + 17 显式索引，逐表对齐 §3.3~§3.25）+ `ets/database/{SqlScript,MigrationRunner,Database}.ets` + `ets/database/migrations/MigrationRegistry.ets`。元数据表 `db_meta`(§3.2)/`schema_migrations`(迁移表) 由执行器 `CREATE TABLE IF NOT EXISTS` 引导。
   > 约束亮点：枚举全 NOT NULL CHECK（R-039）；accepted_answers 主答案部分唯一索引；bookmarks 章节/块级部分唯一（R-012）；handwriting_records 三态互斥 XOR + 对应 CHECK（R-041）；exercises 九种题型 CHECK（保留非手写四种，R-063）；recognition_error_code 形式化 CHECK（R-057）。
   > 自验证：V001 全量 DDL 经 SQLite（relationalStore 底座）解析建表通过（24 表）+ 约束冒烟测试（FK/枚举/长度/题型/主答案/笔迹 XOR/收藏唯一/版本唯一）全通过。未编译验证：缺 HarmonyOS SDK，ArkTS 侧仅引用自洽核查（relationalStore/resourceManager/TextDecoder 以 API 12 为准）。
-- [ ] P0-4 Repository 基类与事务封装：统一 Repository 接口约定（页面不碰 SQL）、事务/可回滚封装、`AppError` 领域错误。
+- [x] P0-4 Repository 基类与事务封装：统一 Repository 接口约定（页面不碰 SQL）、事务/可回滚封装、`AppError` 领域错误。
+  > 落地三件：①`utils/AppErrors.ets` 领域错误工厂——固化 §3.14A error_code→资源键稳定映射（25 条逐行核验一致）+ `DB_*` 通用码兜底 `state.error`；`create/from/isAppError/sanitizeDetail`，detail 脱敏 ≤1000（04 §1），不抛裸字符串。②`database/Database.ets` 增 `withTransaction<T>`/`TransactionWork<T>`——单事务执行、失败整体 `rollBack` 并归一为 `DB_TRANSACTION_FAILED`（LLD §8，relationalStore 经典事务不可重入约定写入注释）。③`repositories/BaseRepository.ets` 抽象基类——`store` 仅 protected 可见（页面不碰 SQL，CLAUDE.md §5）、`queryList/querySingle`（ResultSet finally 关闭、异常归一 `DB_QUERY_FAILED`）、`runInTransaction`、`wrapError`。
+  > 自验证：§3.14A 映射经 Python 与规格逐行比对 PASS（25/25 一致、无缺漏无多出）；引用自洽核查通过（TransactionWork/AppErrors/AppError 及 relationalStore API 沿用 P0-3 基线）。未编译验证：缺 HarmonyOS SDK，relationalStore querySql/ResultSet/事务 API 以 API 12 为准。
 - [ ] P0-5 i18n 资源骨架：`resources/{base,zh_CN,en_US}/element/string.json`；按 LLD §3.14A 落 error_code→资源键映射的全部键中英文文案（§3.14B 文案表）。
 - [ ] P0-6 路由骨架：按 LLD §6 各页面路由（含 §6.13 `from`/`bookId`/`range` 约定）建 Navigation 路由表与占位页。
 
@@ -53,3 +55,4 @@
 - [x] P0-2 通用类型与 DTO @556db45 — `domain/entities/` 11 个 ArkTS 模型对齐《04》§1~§11（本轮恢复提交：上一轮 PowerShell 工具异常落盘未提交）。
 - [x] P0-3 数据库迁移 V001 @531702a — V001__initial.sql（22 业务表 + 17 索引，§3.3~§3.25）+ SqlScript/MigrationRunner/Database/MigrationRegistry；DDL 经 SQLite 解析建表 + 约束冒烟测试全通过，relationalStore 封装与迁移执行器（迁移表/单调递增/单事务/只执行一次/可回滚）就绪。
 - [x] P0-2 通用类型与 DTO @556db45 — 在 `domain/entities/` 新增 11 个 ArkTS 模型文件对齐《04》§1~§11（DTO + 19 接口契约），经 `tsc --strict --noEmit` 交叉核验通过。（提交在 ralph 本轮恢复：上一轮 PowerShell 工具异常 Exit 66 落盘未提交，本轮补提交为 @556db45。）
+- [x] P0-4 Repository 基类与事务封装 @2eb53e8 — 新增 `utils/AppErrors.ets`（§3.14A 码→资源键映射 25 条逐行一致 + 领域错误工厂/脱敏）、`repositories/BaseRepository.ets`（页面不碰 SQL、ResultSet 安全遍历、查询异常归一），并给 `database/Database.ets` 增 `withTransaction` 事务/可回滚封装；映射经 Python 与规格逐行比对 PASS。

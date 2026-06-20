@@ -2,6 +2,13 @@ import { relationalStore } from '@kit.ArkData';
 import { common } from '@kit.AbilityKit';
 import { util } from '@kit.ArkTS';
 import { MigrationRunner, SqlAssetLoader } from './MigrationRunner';
+import { AppErrors, DB_TRANSACTION_FAILED } from '../utils/AppErrors';
+
+/**
+ * 事务工作单元：在已开启的事务内执行写入/读取并返回结果。
+ * 由 `withTransaction` 注入底层 `store`，回调内部**不得**自行 begin/commit/rollBack。
+ */
+export type TransactionWork<T> = (store: relationalStore.RdbStore) => Promise<T>;
 
 /** 数据库文件名（应用沙箱内，LLD §1.3：本地关系数据）。 */
 const DB_NAME: string = 'moxue.db';
@@ -57,6 +64,32 @@ export class Database {
    */
   getStore(): relationalStore.RdbStore {
     return this.store;
+  }
+
+  /**
+   * 事务/可回滚封装（P0-4，LLD §8）。在单个事务内执行 `work`，成功提交、失败整体回滚。
+   *
+   * 约束：relationalStore 经典事务**不可重入**——同一时刻仅一个活动事务，
+   * `work` 内部不得再次开启事务（嵌套调用须在同一回调内串行完成全部读写，LLD §8）。
+   * 失败时统一归一为领域错误：`work` 抛出的 `AppError` 透传，其它异常包成
+   * `DB_TRANSACTION_FAILED`（不输出用户内容/笔迹/敏感路径，CLAUDE.md §5）。
+   *
+   * @param work 事务工作单元，接收底层 store 并返回结果。
+   * @returns 工作单元的返回值（事务已提交）。
+   * @throws AppError 工作单元失败时抛出（事务已回滚）。
+   */
+  async withTransaction<T>(work: TransactionWork<T>): Promise<T> {
+    this.store.beginTransaction();
+    try {
+      // 事务内执行的业务结果
+      const result: T = await work(this.store);
+      this.store.commit();
+      return result;
+    } catch (cause) {
+      // 任一步失败整体回滚，再把异常归一为领域错误向上抛出
+      this.store.rollBack();
+      throw AppErrors.from(cause, DB_TRANSACTION_FAILED);
+    }
   }
 
   /**
