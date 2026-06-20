@@ -1,0 +1,251 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/ai.studybook/chapter.schema.json",
+  "title": "AI StudyBook Chapter",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "id",
+    "order",
+    "kind",
+    "title",
+    "sourcePages",
+    "sections",
+    "exercises",
+    "quality"
+  ],
+  "properties": {
+    "schemaVersion": {"type": "string", "pattern": "^1\\.[0-9]+\\.[0-9]+$"},
+    "id": {"type": "string"},
+    "order": {"type": "integer", "minimum": 1},
+    "kind": {
+      "enum": ["lesson", "review", "appendix", "answer-key", "index"]
+    },
+    "title": {"type": "string"},
+    "titleZh": {"type": "string"},
+    "sourcePages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "integer", "minimum": 1}
+    },
+    "estimatedMinutes": {"type": "integer", "minimum": 1},
+    "learningObjectives": {"type": "array", "items": {"type": "string"}},
+    "keywords": {"type": "array", "items": {"type": "string"}},
+    "sections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "blocks", "sourceRef"],
+        "properties": {
+          "id": {"type": "string"},
+          "type": {
+            "enum": [
+              "concept",
+              "rule",
+              "examples",
+              "comparison",
+              "spelling",
+              "note",
+              "illustration",
+              "summary"
+            ]
+          },
+          "title": {"type": "string"},
+          "blocks": {"type": "array", "items": {"type": "object"}},
+          "sourceRef": {
+            "type": "object",
+            "required": ["pdfPages", "confidence"],
+            "properties": {
+              "pdfPages": {
+                "type": "array",
+                "items": {"type": "integer", "minimum": 1}
+              },
+              "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+            }
+          }
+        }
+      }
+    },
+    "exercises": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "instruction", "prompt", "answers", "grading", "sourceRef"],
+        "properties": {
+          "id": {"type": "string"},
+          "type": {
+            "enum": [
+              "fill-blank-handwriting",
+              "multi-blank-handwriting",
+              "rewrite-sentence-handwriting",
+              "short-answer-handwriting",
+              "choice",
+              "true-false",
+              "match",
+              "order-words",
+              "correction-handwriting"
+            ]
+          },
+          "instruction": {"type": "string"},
+          "prompt": {"type": "object"},
+          "answers": {"type": "object"},
+          "grading": {"type": "object"},
+          "feedback": {"type": "object"},
+          "allowEmpty": {"type": "boolean"},
+          "sourceRef": {
+            "type": "object",
+            "required": ["pdfPages", "confidence"],
+            "properties": {
+              "pdfPages": {"type": "array", "items": {"type": "integer", "minimum": 1}},
+              "exerciseNumber": {"type": "string"},
+              "answerSource": {
+                "enum": ["answer-key", "explicit-in-page", "ai-inferred", "manual"]
+              },
+              "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+            }
+          }
+        },
+        "comment": "五种手写题型 v1 完整实现，强制 segments/answers/grading 结构；choice/true-false/match/order-words 四种非手写题型导入后保留占位，其 prompt/answers/grading 保持通用对象不强约束（R-063 保留题型、交互后续迭代）。",
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "type": {
+                  "enum": [
+                    "fill-blank-handwriting",
+                    "multi-blank-handwriting",
+                    "rewrite-sentence-handwriting",
+                    "short-answer-handwriting",
+                    "correction-handwriting"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "prompt": {
+                  "type": "object",
+                  "required": ["segments"],
+                  "properties": {
+                    "segments": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "required": ["type"],
+                        "properties": {
+                          "type": {"enum": ["text", "blank"]},
+                          "text": {"type": "string"},
+                          "id": {"type": "string"},
+                          "widthEm": {"type": "number", "minimum": 3, "maximum": 40},
+                          "lines": {"type": "integer", "minimum": 1, "maximum": 5},
+                          "handwritingMode": {"enum": ["english", "number", "mixed"]}
+                        },
+                        "allOf": [
+                          {
+                            "if": {"properties": {"type": {"const": "blank"}}},
+                            "then": {"required": ["id"]}
+                          }
+                        ]
+                      }
+                    }
+                  }
+                },
+                "answers": {
+                  "type": "object",
+                  "minProperties": 1,
+                  "additionalProperties": {
+                    "type": "object",
+                    "required": ["display", "accepted"],
+                    "properties": {
+                      "display": {"type": "string"},
+                      "accepted": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {"type": "string"}
+                      },
+                      "tokens": {"type": "array", "items": {"type": "string"}}
+                    }
+                  }
+                },
+                "grading": {
+                  "type": "object",
+                  "properties": {
+                    "mode": {"type": "string"},
+                    "caseSensitive": {"type": "boolean"},
+                    "trimWhitespace": {"type": "boolean"},
+                    "collapseWhitespace": {"type": "boolean"},
+                    "ignoreTerminalPunctuation": {"type": "boolean"},
+                    "normalizeApostrophes": {"type": "boolean"},
+                    "maxEditDistance": {"type": "integer", "minimum": 0},
+                    "partialRules": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["id", "result"],
+                        "properties": {
+                          "id": {"type": "string"},
+                          "ruleType": {"enum": ["tokens-equal", "missing-token"]},
+                          "whenTokensEqual": {"type": "array", "items": {"type": "string"}},
+                          "result": {"enum": ["correct", "partial", "incorrect"]},
+                          "feedbackZh": {"type": "string"}
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "flashcards": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "front", "back"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9-]*$"
+          },
+          "front": {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": {"type": "string"},
+              "text": {"type": "string"}
+            }
+          },
+          "back": {
+            "type": "object",
+            "required": ["type"],
+            "properties": {
+              "type": {"type": "string"},
+              "text": {"type": "string"}
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "chapterSummary": {"type": "array", "items": {"type": "string"}},
+    "quality": {
+      "type": "object",
+      "required": ["ocrConfidence", "reviewStatus", "issues"],
+      "properties": {
+        "ocrConfidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "reviewStatus": {
+          "enum": ["unreviewed", "needs-review", "reviewed"]
+        },
+        "issues": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  },
+  "additionalProperties": true
+}

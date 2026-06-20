@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/ai.studybook/manifest.schema.json",
+  "title": "AI StudyBook Manifest",
+  "type": "object",
+  "required": [
+    "format",
+    "formatVersion",
+    "contentVersion",
+    "packageId",
+    "createdAt",
+    "generator",
+    "entry",
+    "book",
+    "checksums"
+  ],
+  "properties": {
+    "format": {"const": "ai.studybook"},
+    "formatVersion": {"type": "string", "pattern": "^1\\.[0-9]+\\.[0-9]+$"},
+    "contentVersion": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"},
+    "packageId": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+    "createdAt": {"type": "string", "format": "date-time"},
+    "generator": {
+      "type": "object",
+      "required": ["name", "model"],
+      "properties": {
+        "name": {"type": "string"},
+        "model": {"type": "string"}
+      }
+    },
+    "entry": {"const": "book.json"},
+    "contentRoot": {"const": "chapters"},
+    "assetRoot": {"const": "assets"},
+    "book": {
+      "type": "object",
+      "required": ["id", "title", "authors", "languages", "chapterCount"],
+      "properties": {
+        "id": {"type": "string"},
+        "title": {"type": "string", "minLength": 1},
+        "subtitle": {"type": "string"},
+        "authors": {"type": "array", "items": {"type": "string"}},
+        "languages": {"type": "array", "items": {"type": "string"}},
+        "cover": {"type": "string"},
+        "chapterCount": {"type": "integer", "minimum": 1}
+      }
+    },
+    "checksums": {"const": "checksums.json"}
+  },
+  "additionalProperties": true
+}
+
