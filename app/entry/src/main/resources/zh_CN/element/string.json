@@ -251,6 +251,12 @@
     { "name": "import_validate_confirm", "value": "确认导入" },
     { "name": "import_validate_cancel", "value": "取消" },
     { "name": "import_validate_view_report", "value": "查看报告" },
-    { "name": "import_validate_done", "value": "完成" }
+    { "name": "import_validate_done", "value": "完成" },
+    { "name": "exercise_broken", "value": "题目内容已损坏，无法打开" },
+    { "name": "exercise_nonhandwriting", "value": "此题型后续迭代支持，题目已保留" },
+    { "name": "exercise_undo", "value": "撤销" },
+    { "name": "exercise_redo", "value": "重做" },
+    { "name": "exercise_clear", "value": "清除" },
+    { "name": "exercise_recognizing", "value": "正在识别答案…" }
   ]
 }

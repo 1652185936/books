@@ -251,6 +251,12 @@
     { "name": "import_validate_confirm", "value": "Confirm Import" },
     { "name": "import_validate_cancel", "value": "Cancel" },
     { "name": "import_validate_view_report", "value": "View Report" },
-    { "name": "import_validate_done", "value": "Done" }
+    { "name": "import_validate_done", "value": "Done" },
+    { "name": "exercise_broken", "value": "Exercise content is corrupted and cannot be opened" },
+    { "name": "exercise_nonhandwriting", "value": "This exercise type will be supported in a future update; content is preserved" },
+    { "name": "exercise_undo", "value": "Undo" },
+    { "name": "exercise_redo", "value": "Redo" },
+    { "name": "exercise_clear", "value": "Clear" },
+    { "name": "exercise_recognizing", "value": "Recognizing answer…" }
   ]
 }
