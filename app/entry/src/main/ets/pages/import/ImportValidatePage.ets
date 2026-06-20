@@ -22,8 +22,8 @@ import { common } from '@kit.AbilityKit';
 import { fileIo } from '@kit.CoreFileKit';
 import { zlib } from '@kit.BasicServicesKit';
 import { cryptoFramework } from '@kit.CryptoArchitectureKit';
-import { buffer } from '@kit.ArkTS';
-import { Id, AppError } from '../../domain/entities/common';
+import { buffer, util } from '@kit.ArkTS';
+import { AppError } from '../../domain/entities/common';
 import { AppErrors, DB_WRITE_FAILED } from '../../utils/AppErrors';
 import { RouteName, ImportValidateParams } from '../../utils/Routes';
 import { Database } from '../../database/Database';
@@ -34,8 +34,8 @@ import { ImportFs } from '../../services/import/ImportStaging';
 import { ImportLifecycle, UriPermissionPort } from '../../services/import/ImportLifecycle';
 import { ImportService, SourceBytesReader, ZipExtractor, ImportValidationDeps } from '../../services/ImportService';
 import { HashComputer } from '../../services/import/ChecksumVerifier';
-import { SchemaProvider, classifyStagingFile } from '../../services/import/StudybookSchemaCatalog';
-import { defaultValidationOptions } from '../../services/import/ImportLimits';
+import { SchemaProvider, BUILTIN_SCHEMA_RAWFILE, StudybookSchemaKind } from '../../services/import/StudybookSchemaCatalog';
+import { JsonValue } from '../../services/import/JsonSchemaValidator';
 import { SourceProbePort, SourceFileMeta } from '../../services/StorageProbe';
 import { UriHasher, UriPersistPort } from '../../services/ImportService';
 import {
@@ -89,7 +89,7 @@ class FsSourceProbeF03 implements SourceProbePort {
 class CryptoUriHasherF03 implements UriHasher {
   async hashUri(sourceUri: string): Promise<string> {
     const bytes: Uint8Array = new Uint8Array(buffer.from(sourceUri, 'utf-8').buffer);
-    const md: cryptoFramework.Md = cryptoFramework.createMd('SHA-256');
+    const md: cryptoFramework.Md = cryptoFramework.createMd('SHA256');
     await md.update({ data: bytes });
     const digest: cryptoFramework.DataBlob = await md.digest();
     return Array.from(digest.data).map((b: number): string => b.toString(16).padStart(2, '0')).join('');
@@ -115,14 +115,24 @@ class NoopUriReleaseF03 implements UriPermissionPort {
  * 文件系统 ImportFs 适配器（F03 用；同 F02 FsImportFs 口径）。
  */
 class FsImportFsF03 implements ImportFs {
-  mkdir(path: string): Promise<void> {
+  mkdirs(path: string): Promise<void> {
     return fileIo.mkdir(path, true);
   }
   exists(path: string): Promise<boolean> {
     return fileIo.access(path);
   }
-  rmdir(path: string): Promise<void> {
-    return fileIo.rmdir(path);
+  async remove(path: string): Promise<void> {
+    // 不存在直接成功（幂等清理）
+    if (!(await fileIo.access(path))) {
+      return;
+    }
+    // 目录递归删除，文件 unlink（ImportFs.remove 语义：递归删、不存在视为成功）
+    const stat: fileIo.Stat = await fileIo.stat(path);
+    if (stat.isDirectory()) {
+      await fileIo.rmdir(path);
+    } else {
+      await fileIo.unlink(path);
+    }
   }
   move(from: string, to: string): Promise<void> {
     return fileIo.moveFile(from, to);
@@ -141,11 +151,15 @@ class FsImportFsF03 implements ImportFs {
   async listFilesRecursive(root: string): Promise<string[]> {
     const result: string[] = [];
     const collect = async (dir: string, prefix: string): Promise<void> => {
-      const entries: fileIo.Dirent[] = (await fileIo.listFile(dir, { listNum: 0, recursion: false })) as fileIo.Dirent[];
-      for (const entry of entries) {
-        const rel: string = prefix.length > 0 ? `${prefix}/${entry.name}` : entry.name;
-        if (entry.isDirectory()) {
-          await collect(`${dir}/${entry.name}`, rel);
+      // 当前层条目名（fileIo.listFile 返回名称数组，非递归）
+      const names: string[] = await fileIo.listFile(dir);
+      for (const name of names) {
+        const abs: string = `${dir}/${name}`;
+        const rel: string = prefix.length > 0 ? `${prefix}/${name}` : name;
+        // 按 stat 判定类型：目录下钻，文件收集相对路径
+        const stat: fileIo.Stat = await fileIo.stat(abs);
+        if (stat.isDirectory()) {
+          await collect(abs, rel);
         } else {
           result.push(rel);
         }
@@ -194,8 +208,8 @@ class OhosZipExtractor implements ZipExtractor {
  * SHA-256 哈希计算适配器（`@kit.CryptoArchitectureKit`）。
  */
 class CryptoHashComputer implements HashComputer {
-  async computeHash(data: Uint8Array): Promise<string> {
-    const md: cryptoFramework.Md = cryptoFramework.createMd('SHA-256');
+  async sha256(data: Uint8Array): Promise<string> {
+    const md: cryptoFramework.Md = cryptoFramework.createMd('SHA256');
     await md.update({ data: data });
     const digest: cryptoFramework.DataBlob = await md.digest();
     return Array.from(digest.data).map((b: number): string => b.toString(16).padStart(2, '0')).join('');
@@ -206,29 +220,45 @@ class CryptoHashComputer implements HashComputer {
  * 内置 Schema 来源适配器（从 `resources/rawfile/schemas/` 读取应用内置可信副本；BR-002）。
  */
 class RawfileSchemaProvider implements SchemaProvider {
-  private readonly context: common.Context;
-  constructor(context: common.Context) {
-    this.context = context;
+  /** 种类 → 已解析内置 Schema 映射（由静态 load 预读 rawfile 后构造；SchemaProvider.get 为同步契约）。 */
+  private readonly schemas: Record<string, JsonValue>;
+
+  /**
+   * @param schemas 预读的「种类 → 已解析 Schema」映射。
+   */
+  constructor(schemas: Record<string, JsonValue>) {
+    this.schemas = schemas;
   }
-  async loadSchema(kind: string): Promise<object | undefined> {
-    const fileMap: Record<string, string> = {
-      manifest: 'schemas/manifest.schema.json',
-      book: 'schemas/book.schema.json',
-      chapter: 'schemas/chapter.schema.json',
-      report: 'schemas/report.schema.json',
-      checksums: 'schemas/checksums.schema.json'
-    };
-    const rawfilePath: string | undefined = fileMap[kind];
-    if (rawfilePath === undefined) {
-      return undefined;
+
+  /**
+   * 取指定种类的内置 Schema（同步，满足 `SchemaProvider` 契约）。
+   * @param kind Schema 种类。
+   * @returns 已解析 Schema；缺失返回 undefined。
+   */
+  get(kind: StudybookSchemaKind): JsonValue | undefined {
+    return Object.keys(this.schemas).indexOf(kind) >= 0 ? this.schemas[kind] : undefined;
+  }
+
+  /**
+   * 从 `resources/rawfile/schemas/` 预读五个应用内置可信 Schema 副本，构造 Provider（BR-002，绝不读包内 schemas/）。
+   * @param context 应用上下文（提供 resourceManager）。
+   * @returns 已就绪的内置 Schema Provider。
+   */
+  static async load(context: common.Context): Promise<RawfileSchemaProvider> {
+    // 种类 → 已解析 Schema
+    const map: Record<string, JsonValue> = {};
+    // UTF-8 解码器
+    const decoder: util.TextDecoder = util.TextDecoder.create('utf-8');
+    // 五种内置 Schema 种类
+    const kinds: StudybookSchemaKind[] = ['manifest', 'book', 'chapter', 'report', 'checksums'];
+    for (const kind of kinds) {
+      // rawfile 相对路径（schemas/<kind>.schema.json）
+      const rawPath: string = BUILTIN_SCHEMA_RAWFILE[kind];
+      const bytes: Uint8Array = await context.resourceManager.getRawFileContent(rawPath);
+      const text: string = decoder.decodeWithStream(bytes, { stream: false });
+      map[kind] = JSON.parse(text) as JsonValue;
     }
-    try {
-      const bytes: Uint8Array = await this.context.resourceManager.getRawFileContent(rawfilePath);
-      const text: string = new TextDecoder('utf-8').decode(bytes);
-      return JSON.parse(text) as object;
-    } catch (cause) {
-      return undefined;
-    }
+    return new RawfileSchemaProvider(map);
   }
 }
 
@@ -333,7 +363,7 @@ export struct ImportValidatePage {
       const deps: ImportValidationDeps = {
         fs: fsAdapter,
         hasher: new CryptoHashComputer(),
-        schemas: new RawfileSchemaProvider(context),
+        schemas: await RawfileSchemaProvider.load(context),
         contentRepo: contentRepo,
         sourceBytes: new FsSourceBytesReader(),
         extractor: new OhosZipExtractor(),
@@ -497,7 +527,7 @@ export struct ImportValidatePage {
     NavDestination() {
       Column() {
         // 步骤指示器（第 3 步：开始校验）
-        ImportStepper({ currentStep: ImportStep.Validate })
+        ImportStepper({ current: ImportStep.Validate })
           .padding({ left: 24, right: 24, top: 16, bottom: 8 })
 
         // 主内容区（可滚动：校验阶段多时不遮操作区）
