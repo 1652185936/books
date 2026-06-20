@@ -1,0 +1,120 @@
+{
+  "string": [
+    {
+      "name": "error_import_invalidZip",
+      "value": "Invalid study book file"
+    },
+    {
+      "name": "error_import_pathTraversal",
+      "value": "Study book contains illegal file paths; import blocked"
+    },
+    {
+      "name": "error_import_limitExceeded",
+      "value": "Study book exceeds the size or entry-count limit"
+    },
+    {
+      "name": "error_import_zipBomb",
+      "value": "Abnormal compression ratio; possible zip bomb"
+    },
+    {
+      "name": "error_import_manifestMissing",
+      "value": "Study book is missing its manifest"
+    },
+    {
+      "name": "error_import_versionIncompatible",
+      "value": "Study book version is incompatible with this app"
+    },
+    {
+      "name": "error_import_jsonParse",
+      "value": "Failed to parse study book content"
+    },
+    {
+      "name": "error_import_schemaInvalid",
+      "value": "Study book content does not match the schema"
+    },
+    {
+      "name": "error_import_hashMismatch",
+      "value": "File checksum mismatch"
+    },
+    {
+      "name": "error_import_referenceMissing",
+      "value": "A referenced resource is missing from the study book"
+    },
+    {
+      "name": "error_import_chapterConflict",
+      "value": "Chapter structure has a conflict"
+    },
+    {
+      "name": "error_import_answerMissing",
+      "value": "An exercise is missing its required answer"
+    },
+    {
+      "name": "error_import_storageFull",
+      "value": "Not enough storage space on the device"
+    },
+    {
+      "name": "error_import_duplicateVersion",
+      "value": "A study book with the same version already exists"
+    },
+    {
+      "name": "warning_import_needsReview",
+      "value": "Imported, but some content is recommended for review"
+    },
+    {
+      "name": "error_import_dbCommitFailed",
+      "value": "Failed to save data; import incomplete"
+    },
+    {
+      "name": "error_import_copyFailed",
+      "value": "Failed to copy files"
+    },
+    {
+      "name": "error_import_extractFailed",
+      "value": "Failed to extract the study book"
+    },
+    {
+      "name": "error_import_indexFailed",
+      "value": "Failed to build the content index"
+    },
+    {
+      "name": "error_import_unknownExerciseType",
+      "value": "Study book contains an unsupported exercise type"
+    },
+    {
+      "name": "error_recognition_timeout",
+      "value": "Recognition timed out, please retry"
+    },
+    {
+      "name": "error_recognition_emptyText",
+      "value": "No handwriting recognized; please rewrite"
+    },
+    {
+      "name": "error_recognition_unavailable",
+      "value": "Handwriting grading unavailable on this device"
+    },
+    {
+      "name": "error_recognition_unsupportedMode",
+      "value": "Recognition mode not supported for this exercise"
+    },
+    {
+      "name": "error_recognition_internal",
+      "value": "Recognition service error; please retry"
+    },
+    {
+      "name": "action_confirm",
+      "value": "Confirm Answer"
+    },
+    {
+      "name": "state_loading",
+      "value": "Loading…"
+    },
+    {
+      "name": "state_empty",
+      "value": "No data"
+    },
+    {
+      "name": "state_error",
+      "value": "Something went wrong, please retry"
+    }
+  ]
+}

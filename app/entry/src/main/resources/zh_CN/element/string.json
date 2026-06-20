@@ -1,22 +1,6 @@
 {
   "string": [
     {
-      "name": "module_desc",
-      "value": "墨学书架 entry 模块"
-    },
-    {
-      "name": "EntryAbility_desc",
-      "value": "墨学书架主入口"
-    },
-    {
-      "name": "EntryAbility_label",
-      "value": "墨学书架"
-    },
-    {
-      "name": "index_ready_hint",
-      "value": "工程脚手架已就绪"
-    },
-    {
       "name": "error_import_invalidZip",
       "value": "学习包文件无法识别"
     },

@@ -10,6 +10,15 @@ import { AppError } from '../domain/entities/common';
  *   禁止含完整正文/笔迹/敏感路径，CLAUDE.md §5）；
  * - 把任意捕获到的异常归一为 `AppError`，避免 Promise 抛裸字符串（04 §1）。
  *
+ * 逻辑键 ↔ 物理资源名（P0-5，见 ADR「实现期冲突：i18n 资源键命名」）：
+ * - §3.14A/§3.14B 以**点分键**（如 `error.import.invalidZip`）为 i18n 逻辑键真值，
+ *   `messageKey` 始终携带该逻辑键；
+ * - 但 HarmonyOS `restool` 要求资源名匹配 `[a-zA-Z0-9_]`、`$r('app.string.NAME')` 以点分隔，
+ *   点分键无法作为物理资源名。故落盘 `string.json` 的物理名用确定性转写 `.`→`_`
+ *   （`error.import.invalidZip` → `error_import_invalidZip`），语义零变化；
+ * - 页面在 `$r('app.string.' + AppErrors.physicalKeyFor(err.messageKey))` 处做桥接，
+ *   逻辑键与物理名各自单一来源，互不污染。
+ *
  * 唯一真值：§3.14A 为映射真值，04 契约 §1 为 `AppError` 结构真值；本模块不得自造错误码语义。
  */
 
@@ -84,6 +93,18 @@ export class AppErrors {
     // 映射命中值（Record 索引在运行期可能为 undefined，故显式判空回退）
     const mapped: string | undefined = ERROR_CODE_TO_MESSAGE_KEY[code];
     return mapped !== undefined ? mapped : DEFAULT_MESSAGE_KEY;
+  }
+
+  /**
+   * 把 i18n 逻辑键（点分，§3.14A 真值）转为 HarmonyOS 物理资源名（下划线）。
+   * 确定性转写 `.`→`_`，与 `string.json`（base/zh_CN/en_US）落盘的 `name` 一一对应；
+   * 页面据此拼出 `$r('app.string.' + physicalKeyFor(messageKey))`。语义不变，仅编码层转换。
+   * @param messageKey i18n 逻辑键（如 `error.import.invalidZip` 或物理名本身）。
+   * @returns HarmonyOS 合法资源名（如 `error_import_invalidZip`）。
+   */
+  static physicalKeyFor(messageKey: string): string {
+    // 全量替换点号为下划线（已是物理名时为幂等）
+    return messageKey.split('.').join('_');
   }
 
   /**

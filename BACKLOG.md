@@ -18,7 +18,10 @@
 - [x] P0-4 Repository 基类与事务封装：统一 Repository 接口约定（页面不碰 SQL）、事务/可回滚封装、`AppError` 领域错误。
   > 落地三件：①`utils/AppErrors.ets` 领域错误工厂——固化 §3.14A error_code→资源键稳定映射（25 条逐行核验一致）+ `DB_*` 通用码兜底 `state.error`；`create/from/isAppError/sanitizeDetail`，detail 脱敏 ≤1000（04 §1），不抛裸字符串。②`database/Database.ets` 增 `withTransaction<T>`/`TransactionWork<T>`——单事务执行、失败整体 `rollBack` 并归一为 `DB_TRANSACTION_FAILED`（LLD §8，relationalStore 经典事务不可重入约定写入注释）。③`repositories/BaseRepository.ets` 抽象基类——`store` 仅 protected 可见（页面不碰 SQL，CLAUDE.md §5）、`queryList/querySingle`（ResultSet finally 关闭、异常归一 `DB_QUERY_FAILED`）、`runInTransaction`、`wrapError`。
   > 自验证：§3.14A 映射经 Python 与规格逐行比对 PASS（25/25 一致、无缺漏无多出）；引用自洽核查通过（TransactionWork/AppErrors/AppError 及 relationalStore API 沿用 P0-3 基线）。未编译验证：缺 HarmonyOS SDK，relationalStore querySql/ResultSet/事务 API 以 API 12 为准。
-- [ ] P0-5 i18n 资源骨架：`resources/{base,zh_CN,en_US}/element/string.json`；按 LLD §3.14A 落 error_code→资源键映射的全部键中英文文案（§3.14B 文案表）。
+- [x] P0-5 i18n 资源骨架：`resources/{base,zh_CN,en_US}/element/string.json`；按 LLD §3.14A 落 error_code→资源键映射的全部键中英文文案（§3.14B 文案表）。
+  > 落地：三份 `app/entry/src/main/resources/{base,zh_CN,en_US}/element/string.json`——25 条 §3.14A 键（20 IMP-* + 5 识别码）+ §3.14B 通用键 `action_confirm`/`state_loading`/`state_empty`/`state_error`；base=中文基线（含原脚手架键）、zh_CN=中文、en_US=英文。§3.14B 给定 6 条文案（invalidZip/hashMismatch/recognition.timeout/recognition.unavailable/action.confirm/state.empty）逐字一致，其余按口径落盘补齐。
+  > 实现期冲突裁决（已登记 ADR「实现期冲突：i18n 资源键命名」）：§3.14B 点分键与 HarmonyOS `restool` 资源名规则 `[a-zA-Z0-9_]`/`$r('app.string.NAME')` 引用语法冲突。按优先级链（CLAUDE.md §2.1 ArkTS/ArkUI 最高）裁决：点分键保留为 i18n 逻辑键真值（§3.14A 不改），物理资源名用确定性 `.`→`_` 转写；`AppErrors.physicalKeyFor` 单点桥接（`error.import.invalidZip`→`error_import_invalidZip`）。解决而非降级、无字段/语义删改。
+  > 自验证：三份 JSON 经 Python `json.load` 解析通过；§3.14A 全 25 键在三文件齐备、无 restool 非法资源名、规范给定 6 条文案逐字一致（脚本核验 PASS）。未编译验证：缺 HarmonyOS SDK，`restool` 命名规则以官方文档为准（已 context7 核实）、`$r` 引用桥接待 SDK 编译实测。
 - [ ] P0-6 路由骨架：按 LLD §6 各页面路由（含 §6.13 `from`/`bookId`/`range` 约定）建 Navigation 路由表与占位页。
 
 ## 阶段 1 — 导入内核（F02/F03 的核心，多功能依赖）
@@ -56,3 +59,4 @@
 - [x] P0-3 数据库迁移 V001 @531702a — V001__initial.sql（22 业务表 + 17 索引，§3.3~§3.25）+ SqlScript/MigrationRunner/Database/MigrationRegistry；DDL 经 SQLite 解析建表 + 约束冒烟测试全通过，relationalStore 封装与迁移执行器（迁移表/单调递增/单事务/只执行一次/可回滚）就绪。
 - [x] P0-2 通用类型与 DTO @556db45 — 在 `domain/entities/` 新增 11 个 ArkTS 模型文件对齐《04》§1~§11（DTO + 19 接口契约），经 `tsc --strict --noEmit` 交叉核验通过。（提交在 ralph 本轮恢复：上一轮 PowerShell 工具异常 Exit 66 落盘未提交，本轮补提交为 @556db45。）
 - [x] P0-4 Repository 基类与事务封装 @1d9c2fb — 新增 `utils/AppErrors.ets`（§3.14A 码→资源键映射 25 条逐行一致 + 领域错误工厂/脱敏）、`repositories/BaseRepository.ets`（页面不碰 SQL、ResultSet 安全遍历、查询异常归一），并给 `database/Database.ets` 增 `withTransaction` 事务/可回滚封装；映射经 Python 与规格逐行比对 PASS。
+- [x] P0-5 i18n 资源骨架 @pending — 三份 `resources/{base,zh_CN,en_US}/element/string.json` 落 §3.14A 全 25 键 + §3.14B 4 通用键中英文文案；登记并裁决 i18n 点分键 ↔ HarmonyOS `restool` 命名实现期冲突（保留逻辑键真值、物理名 `.`→`_` 转写、`AppErrors.physicalKeyFor` 桥接）；JSON 解析/全键齐备/命名合法/给定文案逐字一致核验 PASS。
