@@ -250,6 +250,8 @@ export struct ImportSelectPage {
   private pathStack: NavPathStack | null = null;
   /** 选择页 ViewModel（onReady 惰性装配）。 */
   private vm: ImportSelectVM | null = null;
+  /** 当前所选来源 URI（仅内存暂存供 startValidation 传给校验页；不入日志，CLAUDE.md §5）。 */
+  private pendingUri: string = '';
   /** 可观察状态快照（VM 监听器同步刷新）。 */
   @State vmState: ImportSelectState = { status: ImportSelectStatus.Idle, fileName: '', fileSize: 0 };
   /** 装配是否就绪（未就绪时禁用选择，避免空指针）。 */
@@ -308,7 +310,8 @@ export struct ImportSelectPage {
       if (uris.length === 0) {
         return;
       }
-      // 仅取首个（单文件约束）
+      // 仅取首个（单文件约束）；暂存 URI 供校验页使用（不展示/不入日志）
+      this.pendingUri = uris[0];
       await this.vm.onFileSelected(uris[0]);
     } catch (cause) {
       // 选择器异常：切错误态（归一 AppError，不泄露 URI）
@@ -332,8 +335,8 @@ export struct ImportSelectPage {
     // 创建任务（VM 内防重复点击）；取系统时钟作为 started_at
     const jobId: Id | undefined = await this.vm.startValidation(Date.now());
     if (jobId !== undefined) {
-      // 跳校验页（携带 jobId；route_map 已注册 import/validate）
-      const params: ImportValidateParams = { jobId };
+      // 跳校验页（携带 jobId + sourceUri；route_map 已注册 import/validate；URI 仅内存传递不入日志）
+      const params: ImportValidateParams = { jobId, sourceUri: this.pendingUri };
       this.pathStack.pushPathByName(RouteName.IMPORT_VALIDATE, params);
     }
   }

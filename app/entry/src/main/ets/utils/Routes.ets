@@ -49,6 +49,8 @@ export class RouteName {
 export interface ImportValidateParams {
   /** 导入任务 ID（import_jobs.id）。 */
   jobId: string;
+  /** 来源文件 URI（仅在内存 NavPathStack 传递，不入日志/持久化，供 runValidation 读取字节；CLAUDE.md §5）。 */
+  sourceUri: string;
 }
 
 /** P-F04 目录页参数（§6.4）。 */
