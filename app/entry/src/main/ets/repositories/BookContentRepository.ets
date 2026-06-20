@@ -14,18 +14,34 @@
  */
 import { relationalStore } from '@kit.ArkData';
 import { Database } from '../database/Database';
-import { BaseRepository } from './BaseRepository';
+import { BaseRepository, RowMapper } from './BaseRepository';
 import { AppErrors, DB_WRITE_FAILED } from '../utils/AppErrors';
 import {
   BookIndexModel, BookRow, ChapterRow, SectionRow, ContentBlockRow, ExerciseRow,
   ExerciseBlankRow, AcceptedAnswerRow, GradingRuleRow, ReviewCardRow, ContentReviewFlagRow, AssetRow
 } from '../services/import/ContentMapper';
+import {
+  UpgradePlan, ExistingIndex, ExistingChapterAnchor, ExistingSectionAnchor, ExistingExerciseAnchor
+} from '../services/import/UpgradePlan';
 
 /**
  * 提交前钩子：在落库事务内、提交之前执行（用于 §2.4 step12 暂存→正式目录原子提升）。
  * 抛出异常即触发事务回滚。
  */
 export type PreCommitHook = () => Promise<void>;
+
+/** 现存书籍摘要（升级前按 package_id 查旧书，定位升级目标与冲突判定）。 */
+export interface ExistingBookSummary {
+  /** 旧书内部 id（升级原地锚点）。 */
+  id: string;
+  /** 内容版本（升级时变化）。 */
+  contentVersion: string;
+  /** 状态（ready/updating/broken/deleted）。 */
+  status: string;
+}
+
+/** 升级期临时 order 偏移：把匹配/被删父行的 order 暂移出有效区，规避 UNIQUE(order_no) 重排冲突。 */
+const UPGRADE_ORDER_OFFSET: number = 1000000;
 
 /**
  * 书籍内容落库仓储。
@@ -320,4 +336,324 @@ export class BookContentRepository extends BaseRepository {
       'INSERT INTO content_review_flags (id, book_id, chapter_external_id, json_path, severity, type, '
       + 'message, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', args);
   }
+
+  // ===========================================================================
+  // 升级（upgrade）路径（P1-5，LLD §2.7 + 《06》§10）：按 external_id 原地 UPDATE，
+  // 内部主键保持稳定，attempts/wrong_items/review_cards 等冗余/外键列自然保持一致。
+  // ===========================================================================
+
+  /**
+   * 按 `package_id` 查现存书籍摘要（升级目标定位；同 package_id 至多一行有效内容版本，§10）。
+   * 排除软删除书（`status='deleted'`）：对已删书按新导入处理，不原地升级。
+   * @param packageId manifest.packageId。
+   * @returns 现存书籍摘要或 undefined（无则为新导入）。
+   */
+  findBookByPackageId(packageId: string): Promise<ExistingBookSummary | undefined> {
+    // 行 → 摘要映射
+    const mapper: RowMapper<ExistingBookSummary> =
+      (cursor: relationalStore.ResultSet): ExistingBookSummary => ({
+        id: cursor.getString(cursor.getColumnIndex('id')),
+        contentVersion: cursor.getString(cursor.getColumnIndex('content_version')),
+        status: cursor.getString(cursor.getColumnIndex('status'))
+      });
+    return this.querySingle(
+      "SELECT id, content_version, status FROM books WHERE package_id = ? AND status != 'deleted' "
+      + 'ORDER BY imported_at DESC LIMIT 1',
+      mapper, [packageId]);
+  }
+
+  /**
+   * 设置书籍状态（升级期 `updating`，成功/失败回到 `ready`，§2.7）。单语句、独立事务。
+   * @param bookId 书籍 id。
+   * @param status 目标状态（ready/updating/broken/deleted）。
+   * @param updatedAt 更新时间戳（epoch ms）。
+   * @returns 完成更新的 Promise。
+   */
+  async setBookStatus(bookId: string, status: string, updatedAt: number): Promise<void> {
+    await this.runInTransaction(async (store: relationalStore.RdbStore): Promise<void> => {
+      await store.executeSql(
+        'UPDATE books SET status = ?, updated_at = ? WHERE id = ?', [status, updatedAt, bookId]);
+    });
+  }
+
+  /**
+   * 读取旧书索引锚点（chapters/sections/exercises 的 external_id → 旧内部 id），供 `planUpgrade` 重映射。
+   * @param bookId 旧书内部 id。
+   * @returns 旧索引锚点集合。
+   * @throws AppError 查询失败时抛出。
+   */
+  async readExistingIndex(bookId: string): Promise<ExistingIndex> {
+    // 旧章节锚点
+    const chapters: ExistingChapterAnchor[] = await this.queryList(
+      'SELECT external_id, id FROM chapters WHERE book_id = ?',
+      (c: relationalStore.ResultSet): ExistingChapterAnchor => ({
+        externalId: c.getString(c.getColumnIndex('external_id')),
+        id: c.getString(c.getColumnIndex('id'))
+      }), [bookId]);
+    // 旧小节锚点（经 chapters 关联限定本书）
+    const sections: ExistingSectionAnchor[] = await this.queryList(
+      'SELECT s.chapter_id AS chapter_id, s.external_id AS external_id, s.id AS id '
+      + 'FROM sections s JOIN chapters c ON s.chapter_id = c.id WHERE c.book_id = ?',
+      (c: relationalStore.ResultSet): ExistingSectionAnchor => ({
+        chapterId: c.getString(c.getColumnIndex('chapter_id')),
+        externalId: c.getString(c.getColumnIndex('external_id')),
+        id: c.getString(c.getColumnIndex('id'))
+      }), [bookId]);
+    // 旧练习锚点
+    const exercises: ExistingExerciseAnchor[] = await this.queryList(
+      'SELECT e.chapter_id AS chapter_id, e.external_id AS external_id, e.id AS id '
+      + 'FROM exercises e JOIN chapters c ON e.chapter_id = c.id WHERE c.book_id = ?',
+      (c: relationalStore.ResultSet): ExistingExerciseAnchor => ({
+        chapterId: c.getString(c.getColumnIndex('chapter_id')),
+        externalId: c.getString(c.getColumnIndex('external_id')),
+        id: c.getString(c.getColumnIndex('id'))
+      }), [bookId]);
+    return { chapters: chapters, sections: sections, exercises: exercises };
+  }
+
+  /**
+   * 在单事务内按升级计划原地落库（§2.7 step2 + 《06》§10），并在提交前执行原子提升钩子。
+   *
+   * 落库顺序（FK 安全 + UNIQUE(order_no) 重排安全）：
+   *   1) UPDATE books（保留 imported_at，更新内容版本/标题等，chapter_count 末尾重算）。
+   *   2) assets 整体替换（DELETE by book_id → INSERT；先于内容块以满足 asset_id 外键）。
+   *   3) 删除被删小节（级联其内容块/section_progress，§10 允许）。
+   *   4) chapters：先把「匹配 + 被删」章节 order 暂移出有效区（规避重排时 UNIQUE 冲突），再 INSERT 新增、UPDATE 匹配；被删章节保留行（attempts FK 历史）。
+   *   5) sections：同法 vacate→insert→update。
+   *   6) content_blocks：清空受影响小节旧块后整体插入新块。
+   *   7) exercises：vacate「匹配 + 被删」order→insert 新增→update 匹配→被删练习 enabled=0（保留 attempts/wrong_items）。
+   *   8) exercise_blanks/accepted_answers/grading_rules：清空受影响练习旧子行后整体插入。
+   *   9) review_cards upsert（按 source_id 保留调度字段）；content_review_flags 按 book_id 整体替换。
+   *   10) 重算 chapter_count，执行提升钩子（失败整体回滚）。
+   *
+   * @param plan 升级执行计划（`planUpgrade` 产出，父引用列已翻译为有效内部 id）。
+   * @param onPromoted 提交前钩子（暂存→正式原子提升）；抛错触发整体回滚。
+   * @returns 重算后的章节数（含被删保留章节，§3.3 与 §10 的口径张力见 ADR）。
+   * @throws AppError 写入失败或钩子失败时抛出（事务已回滚）。
+   */
+  async upgradeBook(plan: UpgradePlan, onPromoted?: PreCommitHook): Promise<number> {
+    return this.runInTransaction(async (store: relationalStore.RdbStore): Promise<number> => {
+      // 1) books（原地 UPDATE，保留 imported_at）
+      await BookContentRepository.updateBook(store, plan.book);
+
+      // 2) assets 整体替换（先删后插，先于内容块）
+      await BookContentRepository.deleteByColumn(store, 'assets', 'book_id', [plan.book.id]);
+      for (let i: number = 0; i < plan.assets.length; i++) {
+        await BookContentRepository.insertAsset(store, plan.assets[i]);
+      }
+
+      // 3) 删除被删小节（级联块/section_progress）
+      await BookContentRepository.deleteByColumn(store, 'sections', 'id', plan.removedSectionIds);
+
+      // 4) chapters：vacate（匹配 + 被删）→ insert 新增 → update 匹配
+      const chapterVacate: string[] = BookContentRepository.collectIds(plan.chaptersUpdate).concat(plan.removedChapterIds);
+      await BookContentRepository.vacateOrder(store, 'chapters', chapterVacate);
+      for (let i: number = 0; i < plan.chaptersInsert.length; i++) {
+        await BookContentRepository.insertChapter(store, plan.chaptersInsert[i]);
+      }
+      for (let i: number = 0; i < plan.chaptersUpdate.length; i++) {
+        await BookContentRepository.updateChapter(store, plan.chaptersUpdate[i]);
+      }
+
+      // 5) sections：vacate 匹配 → insert 新增 → update 匹配
+      await BookContentRepository.vacateOrder(store, 'sections', BookContentRepository.collectIds(plan.sectionsUpdate));
+      for (let i: number = 0; i < plan.sectionsInsert.length; i++) {
+        await BookContentRepository.insertSection(store, plan.sectionsInsert[i]);
+      }
+      for (let i: number = 0; i < plan.sectionsUpdate.length; i++) {
+        await BookContentRepository.updateSection(store, plan.sectionsUpdate[i]);
+      }
+
+      // 6) content_blocks：清空受影响小节旧块 → 整体插入新块
+      await BookContentRepository.deleteByColumn(store, 'content_blocks', 'section_id', plan.affectedSectionIds);
+      for (let i: number = 0; i < plan.blocks.length; i++) {
+        await BookContentRepository.insertBlock(store, plan.blocks[i]);
+      }
+
+      // 7) exercises：vacate（匹配 + 被删）→ insert 新增 → update 匹配 → 被删 enabled=0
+      const exerciseVacate: string[] = BookContentRepository.collectIds(plan.exercisesUpdate).concat(plan.removedExerciseIds);
+      await BookContentRepository.vacateOrder(store, 'exercises', exerciseVacate);
+      for (let i: number = 0; i < plan.exercisesInsert.length; i++) {
+        await BookContentRepository.insertExercise(store, plan.exercisesInsert[i]);
+      }
+      for (let i: number = 0; i < plan.exercisesUpdate.length; i++) {
+        await BookContentRepository.updateExercise(store, plan.exercisesUpdate[i]);
+      }
+      await BookContentRepository.disableExercises(store, plan.removedExerciseIds);
+
+      // 8) 练习子行（blanks/answers/rules）：清空受影响练习旧子行 → 整体插入
+      await BookContentRepository.deleteByColumn(store, 'grading_rules', 'exercise_id', plan.affectedExerciseIds);
+      // 删除空位即级联 accepted_answers（FK ON DELETE CASCADE）
+      await BookContentRepository.deleteByColumn(store, 'exercise_blanks', 'exercise_id', plan.affectedExerciseIds);
+      for (let i: number = 0; i < plan.blanks.length; i++) {
+        await BookContentRepository.insertBlank(store, plan.blanks[i]);
+      }
+      for (let i: number = 0; i < plan.acceptedAnswers.length; i++) {
+        await BookContentRepository.insertAcceptedAnswer(store, plan.acceptedAnswers[i]);
+      }
+      for (let i: number = 0; i < plan.gradingRules.length; i++) {
+        await BookContentRepository.insertGradingRule(store, plan.gradingRules[i]);
+      }
+
+      // 9) review_cards upsert（保留调度字段）；content_review_flags 整体替换
+      for (let i: number = 0; i < plan.reviewCards.length; i++) {
+        await BookContentRepository.upsertReviewCard(store, plan.reviewCards[i]);
+      }
+      await BookContentRepository.deleteByColumn(store, 'content_review_flags', 'book_id', [plan.book.id]);
+      for (let i: number = 0; i < plan.reviewFlags.length; i++) {
+        await BookContentRepository.insertReviewFlag(store, plan.reviewFlags[i]);
+      }
+
+      // 10) 重算 chapter_count，提交前原子提升（失败整体回滚）
+      const chapterCount: number = await BookContentRepository.countChapters(store, plan.book.id);
+      await store.executeSql('UPDATE books SET chapter_count = ? WHERE id = ?', [chapterCount, plan.book.id]);
+      if (onPromoted !== undefined) {
+        await onPromoted();
+      }
+      return chapterCount;
+    });
+  }
+
+  /**
+   * 收集行数组的 id 列（泛型约束 `id: string` 字段，兼容 Chapter/Section/Exercise 行类型）。
+   * @param rows 含 id 字段的行数组。
+   * @returns id 数组。
+   */
+  private static collectIds<T extends BookContentRow>(rows: T[]): string[] {
+    // 结果 id 列
+    const ids: string[] = [];
+    for (let i: number = 0; i < rows.length; i++) {
+      ids.push(rows[i].id);
+    }
+    return ids;
+  }
+
+  /**
+   * 把若干行的 `order_no` 暂移出有效区（`UPGRADE_ORDER_OFFSET + 序号`），规避重排时 UNIQUE(order_no) 瞬时冲突。
+   * @param store 事务内数据库实例。
+   * @param table 表名（chapters/sections/exercises）。
+   * @param ids 待 vacate 的内部 id 数组（可空）。
+   * @returns 完成的 Promise。
+   */
+  private static async vacateOrder(store: relationalStore.RdbStore, table: string, ids: string[]): Promise<void> {
+    for (let i: number = 0; i < ids.length; i++) {
+      await store.executeSql(
+        `UPDATE ${table} SET order_no = ? WHERE id = ?`, [UPGRADE_ORDER_OFFSET + i, ids[i]]);
+    }
+  }
+
+  /**
+   * 把被删练习置 `enabled=0`（保留行与 attempts/wrong_items，《06》§10）。其 order 已由 vacate 移出有效区。
+   * @param store 事务内数据库实例。
+   * @param ids 被删练习内部 id 数组（可空）。
+   * @returns 完成的 Promise。
+   */
+  private static async disableExercises(store: relationalStore.RdbStore, ids: string[]): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
+    // IN 占位符
+    const placeholders: string = ids.map((): string => '?').join(', ');
+    const args: relationalStore.ValueType[] = ids.slice();
+    await store.executeSql(`UPDATE exercises SET enabled = 0 WHERE id IN (${placeholders})`, args);
+  }
+
+  /**
+   * 按某列值集合删除行（升级期的整体替换/级联清理）。
+   * @param store 事务内数据库实例。
+   * @param table 表名。
+   * @param column 过滤列名。
+   * @param values 列值集合（空则不执行）。
+   * @returns 完成的 Promise。
+   */
+  private static async deleteByColumn(
+    store: relationalStore.RdbStore, table: string, column: string, values: string[]): Promise<void> {
+    if (values.length === 0) {
+      return;
+    }
+    // IN 占位符
+    const placeholders: string = values.map((): string => '?').join(', ');
+    const args: relationalStore.ValueType[] = values.slice();
+    await store.executeSql(`DELETE FROM ${table} WHERE ${column} IN (${placeholders})`, args);
+  }
+
+  /**
+   * 原地 UPDATE books（保留 imported_at/last_opened_at/deleted_at；chapter_count 末尾重算）。
+   * @param store 事务内数据库实例。
+   * @param row 书籍行（升级后内容）。
+   * @returns 完成的 Promise。
+   */
+  private static async updateBook(store: relationalStore.RdbStore, row: BookRow): Promise<void> {
+    // 参数（可空列缺省传 null）
+    const args: relationalStore.ValueType[] = [
+      row.packageId, row.contentVersion, row.formatVersion, row.title, row.subtitle,
+      row.authorsJson, row.description, row.languagesJson,
+      row.coverPath !== undefined ? row.coverPath : null,
+      row.sourcePageCount !== undefined ? row.sourcePageCount : null,
+      row.sourceIsScanned, row.status, row.updatedAt, row.id
+    ];
+    await store.executeSql(
+      'UPDATE books SET package_id = ?, content_version = ?, format_version = ?, title = ?, subtitle = ?, '
+      + 'authors_json = ?, description = ?, languages_json = ?, cover_path = ?, source_page_count = ?, '
+      + 'source_is_scanned = ?, status = ?, updated_at = ? WHERE id = ?', args);
+  }
+
+  /**
+   * 原地 UPDATE chapters（保留 created_at/book_id；external_id 为匹配键，值不变）。
+   * @param store 事务内数据库实例。
+   * @param row 章节行。
+   * @returns 完成的 Promise。
+   */
+  private static async updateChapter(store: relationalStore.RdbStore, row: ChapterRow): Promise<void> {
+    // 参数
+    const args: relationalStore.ValueType[] = [
+      row.orderNo, row.kind, row.title, row.titleZh, row.estimatedMinutes, row.sourcePagesJson,
+      row.contentFile, row.contentHash, row.reviewStatus, row.updatedAt, row.id
+    ];
+    await store.executeSql(
+      'UPDATE chapters SET order_no = ?, kind = ?, title = ?, title_zh = ?, estimated_minutes = ?, '
+      + 'source_pages_json = ?, content_file = ?, content_hash = ?, review_status = ?, updated_at = ? '
+      + 'WHERE id = ?', args);
+  }
+
+  /**
+   * 原地 UPDATE sections（chapter_id/external_id 为匹配锚点，值不变）。
+   * @param store 事务内数据库实例。
+   * @param row 小节行。
+   * @returns 完成的 Promise。
+   */
+  private static async updateSection(store: relationalStore.RdbStore, row: SectionRow): Promise<void> {
+    // 参数
+    const args: relationalStore.ValueType[] = [
+      row.orderNo, row.type, row.title, row.sourcePagesJson, row.confidence, row.id
+    ];
+    await store.executeSql(
+      'UPDATE sections SET order_no = ?, type = ?, title = ?, source_pages_json = ?, confidence = ? '
+      + 'WHERE id = ?', args);
+  }
+
+  /**
+   * 原地 UPDATE exercises（chapter_id/external_id 为匹配锚点，值不变；enabled 取新模型）。
+   * @param store 事务内数据库实例。
+   * @param row 练习行。
+   * @returns 完成的 Promise。
+   */
+  private static async updateExercise(store: relationalStore.RdbStore, row: ExerciseRow): Promise<void> {
+    // 参数
+    const args: relationalStore.ValueType[] = [
+      row.orderNo, row.type, row.instruction, row.promptJson, row.contextJson, row.feedbackJson,
+      row.gradingOptionsJson, row.sourceRefJson, row.answerSource, row.confidence, row.enabled,
+      row.allowEmpty, row.id
+    ];
+    await store.executeSql(
+      'UPDATE exercises SET order_no = ?, type = ?, instruction = ?, prompt_json = ?, context_json = ?, '
+      + 'feedback_json = ?, grading_options_json = ?, source_ref_json = ?, answer_source = ?, '
+      + 'confidence = ?, enabled = ?, allow_empty = ? WHERE id = ?', args);
+  }
+}
+
+/** 仅含 id 字段的最小行接口（供 `collectIds` 在不同行类型上复用）。 */
+interface BookContentRow {
+  /** 内部主键。 */
+  id: string;
 }

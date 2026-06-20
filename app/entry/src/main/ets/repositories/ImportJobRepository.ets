@@ -186,6 +186,26 @@ export class ImportJobRepository extends BaseRepository {
   }
 
   /**
+   * 统计同一 `package_id` 下处于非终态（进行中）的其它导入/升级任务数（§2.7 / §8 单飞守卫）。
+   * 终态 `completed`/`cancelled`/`failed` 不计入；`excludeJobId` 自身排除。
+   * @param packageId 包 ID。
+   * @param excludeJobId 排除的任务 ID（当前任务自身）。
+   * @returns 非终态在飞任务数。
+   * @throws AppError 查询失败时抛出。
+   */
+  async countActiveJobsForPackage(packageId: string, excludeJobId: string): Promise<number> {
+    // 行 → 计数映射
+    const mapper: RowMapper<number> =
+      (cursor: relationalStore.ResultSet): number => cursor.getLong(cursor.getColumnIndex('n'));
+    // 非终态在飞任务计数（排除自身）
+    const count: number | undefined = await this.querySingle(
+      "SELECT COUNT(*) AS n FROM import_jobs WHERE package_id = ? AND id != ? "
+      + "AND state NOT IN ('completed', 'cancelled', 'failed')",
+      mapper, [packageId, excludeJobId]);
+    return count !== undefined ? count : 0;
+  }
+
+  /**
    * 守卫式状态推进：事务内读当前状态 → 校验合法转移 → 更新 state 及补丁字段。
    * @param jobId 任务 ID。
    * @param to 目标状态。
